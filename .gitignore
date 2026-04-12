@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+clicker.log
+
+# SQLite: main DB and WAL/journal sidecars (never commit local runtime state)
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.sqlite3-journal
+
+.pytest_cache/
+tmp*/
+debug_bonus/
+debug_hsv_caps/
+debug_screenshot_*.png
+
+# Local virtualenvs
+.venv/
+venv/
+
+.claude/
+CLAUDE.md
+HANDOFF.md
+PREDICTOR.md

@@ -1,0 +1,11 @@
+{
+	"Name": "Shimmer Bridge",
+	"ID": "shimmer bridge",
+	"Author": "Codex",
+	"Description": "Publishes big cookie, shimmer, and grimoire spell coordinates for external automation.",
+	"ModVersion": 1,
+	"GameVersion": 2.04,
+	"Date": "06/04/2026",
+	"Disabled": 0,
+	"AllowSteamAchievs": 1
+}

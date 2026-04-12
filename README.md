@@ -1,5 +1,8 @@
 # 🍪 Auto Clicker for Cookie Clicker (Steam)
 
+**Repository root:** clone or name this folder `auto_clicker_for_cookie_clicker` (matches the project identity on disk and remotes). If your copy is still named `clicker`, close any program using that folder, then in PowerShell from `Desktop\Repo`:  
+`Rename-Item -LiteralPath .\clicker -NewName auto_clicker_for_cookie_clicker`
+
 <div align="center">
 
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
@@ -152,7 +155,7 @@ python -m pytest -q tests/test_stock_trader.py
 ## 🏗 Project Structure
 
 ```
-clicker/
+auto_clicker_for_cookie_clicker/
 ├── main.py                      # Entry point
 ├── clicker.py                   # Legacy runtime (core loops, hotkeys, mod sync)
 ├── clicker_bot/                 # New orchestration modules

@@ -6,7 +6,7 @@ Gradually refactor the Cookie Clicker bot toward clearer SOLID/OOP structure and
 
 ## Agent handoff (read this first)
 
-Use this section to orient before editing. Repository conventions and commands are also summarized in [`AGENTS.md`](AGENTS.md).
+Use this section to orient before editing. Repository conventions and commands are also summarized in [`AGENTS.md`](AGENTS.md). The checkout directory is **`auto_clicker_for_cookie_clicker`** (see [`README.md`](README.md)); module names `clicker.py` / `clicker_bot/` are unchanged.
 
 ### Commands
 

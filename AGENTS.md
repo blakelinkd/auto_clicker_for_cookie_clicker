@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+The repository directory should be named **`auto_clicker_for_cookie_clicker`** (clone or rename the checkout to match). Python modules **`clicker.py`** and **`clicker_bot/`** keep their names for import compatibility.
+
 ## Project Structure & Module Organization
 
 The bot is a Python project rooted at the repository top level. `main.py` is the current launch entrypoint, while `clicker.py` is a compatibility wrapper around the legacy runtime. Feature logic is still mostly split across top-level modules such as `stock_trader.py`, `garden_controller.py`, `spell_autocaster.py`, and `building_autobuyer.py`. New application-shell and orchestration support code lives under `clicker_bot/` (`app.py`, `runtime.py`, `controls.py`, `activation.py`, `dashboard.py`, `events.py`, `dom_loop.py`).

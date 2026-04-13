@@ -33,9 +33,9 @@ class DashboardCallbacks:
     save_config: Optional[Any] = field(default=None)
 
 
-def build_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refresh_interval_ms: int):
+def build_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refresh_interval_ms: int, use_qt_hud: bool = True):
     """Build a dashboard. Prefers PySide6 if available, falls back to Tkinter."""
-    if QT_AVAILABLE:
+    if use_qt_hud and QT_AVAILABLE:
         return build_qt_dashboard(
             callbacks=callbacks,
             initial_geometry=initial_geometry,

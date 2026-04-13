@@ -10,3 +10,4 @@ class AppConfig:
     register_hotkeys: bool = True
     game_install_dir: Optional[Path] = None
     auto_launch_game: bool = False
+    use_qt_hud: bool = True

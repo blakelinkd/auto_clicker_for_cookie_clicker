@@ -30,6 +30,7 @@ def _config_to_dict(config: AppConfig) -> Dict[str, Any]:
     data = {
         "register_hotkeys": config.register_hotkeys,
         "auto_launch_game": config.auto_launch_game,
+        "use_qt_hud": config.use_qt_hud,
     }
     if config.game_install_dir is not None:
         data["game_install_dir"] = str(config.game_install_dir)
@@ -45,6 +46,7 @@ def _dict_to_config(data: Dict[str, Any]) -> AppConfig:
         register_hotkeys=data.get("register_hotkeys", True),
         game_install_dir=game_install_dir,
         auto_launch_game=data.get("auto_launch_game", False),
+        use_qt_hud=data.get("use_qt_hud", True),
     )
 
 

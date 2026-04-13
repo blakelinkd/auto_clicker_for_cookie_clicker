@@ -1577,7 +1577,7 @@ def hud_loop():
             time.sleep(1.0)
 
 
-def start_dashboard():
+def start_dashboard(use_qt_hud: bool = True):
     dashboard_geometry = _get_dashboard_geometry()
     callbacks = DashboardCallbacks(
         get_dashboard_state=get_dashboard_state,
@@ -1603,6 +1603,7 @@ def start_dashboard():
         callbacks=callbacks,
         initial_geometry=dashboard_geometry,
         refresh_interval_ms=max(100, int(HUD_REFRESH_INTERVAL * 1000.0)),
+        use_qt_hud=use_qt_hud,
     )
 
 

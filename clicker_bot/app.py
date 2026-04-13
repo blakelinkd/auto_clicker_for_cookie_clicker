@@ -71,7 +71,7 @@ class BotApplication:
             "Ctrl+Alt+F6 to toggle ascension prep, Ctrl+Alt+F7 to toggle upgrade autobuy, Ctrl+Alt+F9 to toggle stock trading, Ctrl+Alt+F10 to toggle building autobuy, "
             "Ctrl+Alt+F11 to exit)"
         )
-        dashboard = self.legacy.start_dashboard()
+        dashboard = self.legacy.start_dashboard(use_qt_hud=self.config.use_qt_hud)
         dashboard.run()
         return dashboard
 

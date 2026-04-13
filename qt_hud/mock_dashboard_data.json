@@ -41,10 +41,12 @@
     {"timestamp": 7.1, "message": "Wrinkler popped: +1.2M cookies", "category": "wrinkler"}
   ],
   "trade_stats": {
-    "net_pnl": 1250000,
-    "portfolio_value": 5000000,
+    "realized_pnl": 1250000,
+    "portfolio_exposure": 5000000,
     "held_goods": 12,
-    "held_shares": 45
+    "held_shares": 45,
+    "unrealized_pnl": 250000,
+    "session_roi": 0.05
   },
   "building_stats": {
     "last_building": "Farm",

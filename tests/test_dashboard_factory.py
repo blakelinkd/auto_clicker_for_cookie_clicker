@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from clicker_bot.dashboard import DashboardCallbacks, build_dashboard
+from clicker_bot.dashboard import DashboardCallbacks, build_dashboard, QT_AVAILABLE
 
 
 class DashboardFactoryTests(unittest.TestCase):
@@ -25,7 +25,8 @@ class DashboardFactoryTests(unittest.TestCase):
             dump_shimmer_data=lambda: None,
         )
 
-        with patch("clicker_bot.dashboard.BotDashboard") as dashboard_cls:
+        # Since we prefer Qt when available, patch QtDashboard
+        with patch("clicker_bot.dashboard.QtDashboard") as dashboard_cls:
             build_dashboard(
                 callbacks=callbacks,
                 initial_geometry="800x600",

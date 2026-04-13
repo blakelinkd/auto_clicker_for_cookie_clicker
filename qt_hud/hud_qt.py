@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QStylePainter,
     QStyleOptionTab,
 )
-from PySide6.QtGui import QFont, QColor, QPalette, QBrush, QLinearGradient
+from PySide6.QtGui import QFont, QColor, QPalette, QBrush, QLinearGradient, QPainter, QPen, QFontMetrics
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +91,188 @@ class HorizontalTabBar(QTabBar):
             painter.drawText(rect, Qt.AlignCenter, self.tabText(i))
 
 
+class LumpChartWidget(QWidget):
+    """Custom widget for displaying sugar lump timeline visualization."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(100)
+        self.lump_diag = {}
+        self.setStyleSheet("background-color: #1e2630;")
+
+    def set_data(self, lump_diag):
+        """Set the lump diagnostic data and update display."""
+        self.lump_diag = lump_diag or {}
+        self.update()
+
+    def paintEvent(self, event):
+        """Paint the lump timeline chart."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        width = self.width()
+        height = self.height()
+
+        if not self.lump_diag or not self.lump_diag.get("unlocked"):
+            painter.setPen(QPen(QColor("#8aa0b4")))
+            painter.setFont(QFont("Segoe UI", 11))
+            painter.drawText(width // 2, height // 2, "Waiting for sugar lump unlock...")
+            return
+
+        age_ms = self._safe_float(self.lump_diag.get("age_ms"))
+        mature_ms = self._safe_float(self.lump_diag.get("mature_age_ms"))
+        ripe_ms = self._safe_float(self.lump_diag.get("ripe_age_ms"))
+        overripe_ms = self._safe_float(self.lump_diag.get("overripe_age_ms"))
+        total_ms = max(overripe_ms, ripe_ms, mature_ms, 1.0)
+
+        padding_left = 44
+        padding_right = 28
+        baseline_y = 50
+        plot_width = max(1, width - padding_left - padding_right)
+
+        def x_for(value_ms):
+            return padding_left + max(0.0, min(1.0, float(value_ms) / total_ms)) * plot_width
+
+        start_x = padding_left
+        mature_x = x_for(mature_ms)
+        ripe_x = x_for(ripe_ms)
+        overripe_x = x_for(overripe_ms)
+        marker_x = x_for(min(age_ms, total_ms))
+
+        # Draw timeline bar segments
+        bar_width = 10
+        # Inactive (gray)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor("#304253")))
+        painter.drawRect(QRect(start_x, baseline_y - bar_width//2, overripe_x - start_x, bar_width))
+        # Mature (blue)
+        if mature_x > start_x:
+            painter.setBrush(QBrush(QColor("#55b6ff")))
+            painter.drawRect(QRect(start_x, baseline_y - bar_width//2, mature_x - start_x, bar_width))
+        # Ripe (orange)
+        if ripe_x > mature_x:
+            painter.setBrush(QBrush(QColor("#ffb14a")))
+            painter.drawRect(QRect(mature_x, baseline_y - bar_width//2, ripe_x - mature_x, bar_width))
+        # Overripe (green)
+        if overripe_x > ripe_x:
+            painter.setBrush(QBrush(QColor("#3ecf8e")))
+            painter.drawRect(QRect(ripe_x, baseline_y - bar_width//2, overripe_x - ripe_x, bar_width))
+
+        # Draw tick marks
+        painter.setPen(QPen(QColor("#7d93a8")))
+        for x, label in ((start_x, "Now"), (mature_x, "Mature"), (ripe_x, "Ripe"), (overripe_x, "Overripe")):
+            painter.drawLine(x, baseline_y - 18, x, baseline_y + 18)
+            painter.setFont(QFont("Segoe UI", 9))
+            fm = QFontMetrics(painter.font())
+            painter.drawText(x - fm.horizontalAdvance(label) // 2, baseline_y + 28, label)
+
+        # Draw current position marker
+        stage = self.lump_diag.get("stage", "-")
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor("#f7fbff")))
+        painter.drawEllipse(QRect(int(marker_x) - 6, baseline_y - 6, 12, 12))
+        # Stage label above marker
+        painter.setPen(QPen(QColor("#f7fbff")))
+        painter.setFont(QFont("Segoe UI Semibold", 9))
+        painter.drawText(int(marker_x) - 10, baseline_y - 24, stage.upper())
+
+    def _safe_float(self, value):
+        """Safely convert value to float."""
+        if value is None:
+            return 0.0
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+
+class GoldenCookieChartWidget(QWidget):
+    """Custom widget for displaying golden cookie spawn visualization."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(100)
+        self.golden_diag = {}
+        self.setStyleSheet("background-color: #1e2630;")
+
+    def set_data(self, golden_diag):
+        """Set the golden cookie diagnostic data and update display."""
+        self.golden_diag = golden_diag or {}
+        self.update()
+
+    def paintEvent(self, event):
+        """Paint the golden cookie spawn chart."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        width = self.width()
+        height = self.height()
+
+        if not self.golden_diag or not self.golden_diag.get("available"):
+            painter.setPen(QPen(QColor("#8aa0b4")))
+            painter.setFont(QFont("Segoe UI", 11))
+            painter.drawText(width // 2, height // 2, "Waiting for golden cookie data...")
+            return
+
+        curve = list(self.golden_diag.get("spawn_curve") or [])
+        on_screen = int(self.golden_diag.get("on_screen") or 0)
+        progress = float(self.golden_diag.get("progress") or 0.0)
+        spawned = self.golden_diag.get("spawned", [])
+
+        padding = 40
+        chart_width = width - 2 * padding
+        chart_height = height - 2 * padding
+
+        # Draw progress bar background
+        bar_y = height // 2 - 15
+        bar_height = 30
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor("#304253")))
+        painter.drawRect(padding, bar_y, chart_width, bar_height)
+
+        # Draw spawn curve if available
+        if curve and len(curve) > 1:
+            pen = QPen(QColor("#ffb347"))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            points = []
+            for i, val in enumerate(curve):
+                x = padding + (i / (len(curve) - 1)) * chart_width
+                try:
+                    y_val = float(val) if not isinstance(val, dict) else 0.0
+                except (TypeError, ValueError):
+                    y_val = 0.0
+                y = (bar_y + bar_height) - (y_val * bar_height)
+                points.append(QPoint(int(x), int(y)))
+            for i in range(len(points) - 1):
+                painter.drawLine(points[i], points[i + 1])
+
+        # Draw current progress indicator
+        progress_x = padding + progress * chart_width
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor("#fffacd")))
+        painter.drawEllipse(QRect(int(progress_x) - 8, bar_y + bar_height // 2 - 8, 16, 16))
+
+        # Draw labels
+        painter.setPen(QPen(QColor("#9cb0c3")))
+        painter.setFont(QFont("Segoe UI", 9))
+        painter.drawText(padding, height - 10, "0%")
+        painter.drawText(width - padding - 20, height - 10, "100%")
+
+        # On-screen count
+        onscreen_text = f"On screen: {on_screen}"
+        painter.drawText(padding + 10, 25, onscreen_text)
+
+    def _safe_float(self, value):
+        """Safely convert value to float."""
+        if value is None:
+            return 0.0
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+
 class QtDashboard(QMainWindow):
     """PySide6-based dashboard for the Cookie Clicker bot, styled after hud_mockup.html."""
 
@@ -141,6 +323,16 @@ class QtDashboard(QMainWindow):
 
         # Color palette from theme
         self.COLORS = theme.COLORS
+
+        # Toggle buttons dictionary - initialized once here, not in _create_toggle_group
+        self.toggle_buttons = {}
+        self.action_buttons = {}
+
+        # Compatibility aliases for hud_gui.py naming convention
+        # These are initialized as empty dicts - actual widgets are created in the tab methods
+        self.summary_vars = {}
+        self.timing_vars = {}
+        self.building_cap_rows = {}
 
         self.setWindowTitle("Cookie Clicker Bot (Qt)")
         if initial_geometry:
@@ -214,6 +406,9 @@ class QtDashboard(QMainWindow):
         footer = self._create_footer()
         main_layout.addWidget(footer)
 
+        # Map compatibility aliases after all tabs are created
+        self._create_compatibility_aliases()
+
         # Set up refresh timer
         self.timer = QTimer()
         self.timer.timeout.connect(self._refresh)
@@ -225,7 +420,125 @@ class QtDashboard(QMainWindow):
     def _apply_dark_theme(self):
         """Apply dark color palette to the window."""
         from PySide6.QtWidgets import QApplication
-        theme.apply_dark_palette(QApplication.instance())
+        app = QApplication.instance()
+        if app is not None:
+            theme.apply_dark_palette(app)
+
+    def _create_compatibility_aliases(self):
+        """Create compatibility aliases for hud_gui.py naming convention."""
+        # Purchase panel aliases (hud_gui.py naming)
+        self.purchase_title = None  # alias for building_detail
+        self.purchase_detail = self.building_detail
+        self.purchase_cash_bar = self.building_cash_bar
+        self.purchase_cash_label = self.building_cash_label
+        self.purchase_bank_bar = self.building_bank_bar
+        self.purchase_bank_label = self.building_bank_label
+
+        # Upgrade panel aliases
+        self.upgrade_title = None  # alias for upgrade_detail
+        self.upgrade_detail = self.upgrade_detail
+        self.upgrade_cash_bar = self.upgrade_cash_bar
+        self.upgrade_cash_label = self.upgrade_cash_label
+        self.upgrade_bank_bar = self.upgrade_bank_bar
+        self.upgrade_bank_label = self.upgrade_bank_label
+
+        # Lucky reserve aliases
+        self.lucky_reserve_label = QLabel("-")  # placeholder
+
+        # Chart aliases - now use widgets instead of labels
+        self.lump_chart = self.lump_chart_widget
+        self.golden_cookie_chart = self.gc_chart_widget
+        self.trader_chart = self.trader_chart_label
+
+        # Shimmer RNG aliases - find the dump button in diagnostics tab
+        self.shimmer_dump_btn = None
+        dump_btns = self.diagnostics_tab.findChildren(QPushButton)
+        for btn in dump_btns:
+            if "Dump" in btn.text():
+                self.shimmer_dump_btn = btn
+                break
+
+        # Summary and timing vars map to labels
+        self.summary_vars = self.summary_labels
+        self.timing_vars = self.timing_labels
+
+    def run(self):
+        """Start the Qt event loop - called by the bot runtime."""
+        self.show()
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app:
+            app.exec()
+
+    def closeEvent(self, event):
+        """Handle window close - stop the timer and accept the close."""
+        self.timer.stop()
+        event.accept()
+        # Call the exit callback
+        self.exit_program()
+
+    def _safe_toggle_active(self):
+        """Validate game path before allowing bot to start (like hud_gui.py)."""
+        try:
+            payload = self.get_dashboard_state()
+            currently_active = payload.get("state", {}).get("active", False) if payload else False
+        except Exception:
+            currently_active = False
+
+        if currently_active:
+            self.toggle_active()
+            return
+
+        if self.get_config is None:
+            self.toggle_active()
+            return
+
+        try:
+            config = self.get_config()
+        except Exception:
+            self.toggle_active()
+            return
+
+        game_dir_str = config.get("game_install_dir")
+        if not game_dir_str:
+            self._show_warning(
+                "Game Path Not Set",
+                "Please configure the Cookie Clicker installation directory in the Settings tab before starting the bot.\n\n"
+                "You need to select the folder where Cookie Clicker is installed (usually inside Steam's 'common' folder)."
+            )
+            self._switch_to_settings_tab()
+            return
+
+        from pathlib import Path
+        game_dir = Path(game_dir_str)
+        exe_path = game_dir / "Cookie Clicker.exe"
+        if not exe_path.is_file():
+            self._show_warning(
+                "Game Executable Not Found",
+                f"The Cookie Clicker executable was not found at:\n{exe_path}\n\n"
+                "Please verify the installation directory in the Settings tab."
+            )
+            self._switch_to_settings_tab()
+            return
+
+        self.toggle_active()
+
+    def _show_warning(self, title, message):
+        """Show a warning dialog - uses QMessageBox for Qt."""
+        from PySide6.QtWidgets import QMessageBox
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Warning)
+        msg.setText(title)
+        msg.setInformativeText(message)
+        msg.exec()
+
+    def _switch_to_settings_tab(self):
+        """Switch to the Settings tab."""
+        if hasattr(self, 'tab_widget'):
+            for i in range(self.tab_widget.count()):
+                if "Settings" in self.tab_widget.tabText(i):
+                    self.tab_widget.setCurrentIndex(i)
+                    return
 
     def _create_header(self):
         """Create header with hero label and meta status."""
@@ -279,7 +592,7 @@ class QtDashboard(QMainWindow):
 
         # Core Automation group
         core_group = self._create_toggle_group("Core Automation", [
-            ("active", "Bot Active", self.toggle_active),
+            ("active", "Bot Active", self._safe_toggle_active),
             ("main_autoclick", "Main Autoclick", self.toggle_main_autoclick),
             ("shimmer_autoclick", "GC/Wrath Click", self.toggle_shimmer_autoclick),
         ])
@@ -343,7 +656,6 @@ class QtDashboard(QMainWindow):
         label.setStyleSheet(theme.toggle_group_label_style())
         layout.addWidget(label)
 
-        self.toggle_buttons = {}
         for key, text, callback in buttons:
             btn = QPushButton(text)
             btn.setCheckable(True)
@@ -490,6 +802,8 @@ class QtDashboard(QMainWindow):
             ("upgrade_bank_eta", "Upgrade with bank"),
             ("garden_timers", "Garden timers"),
             ("combo_timing", "Combo timing"),
+            ("wrinkler_goal_eta", "Wrinkler goal ETA"),
+            ("wrinkler_target", "Wrinkler target"),
         ]
         for key, text in timing_items:
             middle_layout.addWidget(QLabel(f"<small>{text}</small>"))
@@ -536,9 +850,9 @@ class QtDashboard(QMainWindow):
         self.lump_modifier_label.setStyleSheet(theme.secondary_label_style())
         lump_layout.addWidget(self.lump_modifier_label)
 
-        self.lump_chart_label = QLabel("Lump timeline chart placeholder")
-        self.lump_chart_label.setStyleSheet(theme.chart_label_style(margin_top=10))
-        lump_layout.addWidget(self.lump_chart_label)
+        self.lump_chart_widget = LumpChartWidget()
+        self.lump_chart_widget.setStyleSheet("border: 1px solid #3a4552;")
+        lump_layout.addWidget(self.lump_chart_widget)
 
         layout.addWidget(lump_panel)
 
@@ -555,9 +869,9 @@ class QtDashboard(QMainWindow):
         self.gc_detail_label.setStyleSheet(theme.secondary_label_style())
         gc_layout.addWidget(self.gc_detail_label)
 
-        self.gc_chart_label = QLabel("Golden cookie spawn chart placeholder")
-        self.gc_chart_label.setStyleSheet(theme.chart_label_style(margin_top=10))
-        gc_layout.addWidget(self.gc_chart_label)
+        self.gc_chart_widget = GoldenCookieChartWidget()
+        self.gc_chart_widget.setStyleSheet("border: 1px solid #3a4552;")
+        gc_layout.addWidget(self.gc_chart_widget)
 
         layout.addWidget(gc_panel)
         layout.addStretch()
@@ -656,10 +970,10 @@ class QtDashboard(QMainWindow):
         self.game_path_entry.setStyleSheet(theme.line_edit_style())
         path_layout.addWidget(self.game_path_entry, 1)
 
-        browse_btn = QPushButton("Browse")
-        browse_btn.setStyleSheet(theme.button_style("secondary"))
-        # Note: Actual browse functionality would need platform-specific file dialog
-        path_layout.addWidget(browse_btn)
+        self.browse_btn = QPushButton("Browse")
+        self.browse_btn.setStyleSheet(theme.button_style("secondary"))
+        self.browse_btn.clicked.connect(self._browse_game_directory)
+        path_layout.addWidget(self.browse_btn)
 
         panel_layout.addLayout(path_layout)
 
@@ -814,12 +1128,12 @@ class QtDashboard(QMainWindow):
         stats_layout = QVBoxLayout(stats_panel)
 
         # Building table (placeholder)
-        table_widget = QTableWidget(2, 3)  # 2 rows, 3 columns
-        table_widget.setHorizontalHeaderLabels(["Building", "Current Cap", "Target Cap"])
-        table_widget.setStyleSheet(theme.table_widget_style())
-        table_widget.horizontalHeader().setStretchLastSection(True)
-        table_widget.verticalHeader().setVisible(False)
-        table_widget.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.building_stats_table = QTableWidget(2, 3)  # 2 rows, 3 columns
+        self.building_stats_table.setHorizontalHeaderLabels(["Building", "Current Cap", "Target Cap"])
+        self.building_stats_table.setStyleSheet(theme.table_widget_style())
+        self.building_stats_table.horizontalHeader().setStretchLastSection(True)
+        self.building_stats_table.verticalHeader().setVisible(False)
+        self.building_stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
         
         # Sample data
         sample_data = [
@@ -827,12 +1141,12 @@ class QtDashboard(QMainWindow):
             ["Farm", "5,000", "20,000"],
         ]
         for row, (building, current, target) in enumerate(sample_data):
-            table_widget.setItem(row, 0, QTableWidgetItem(building))
-            table_widget.setItem(row, 1, QTableWidgetItem(current))
-            table_widget.setItem(row, 2, QTableWidgetItem(target))
+            self.building_stats_table.setItem(row, 0, QTableWidgetItem(building))
+            self.building_stats_table.setItem(row, 1, QTableWidgetItem(current))
+            self.building_stats_table.setItem(row, 2, QTableWidgetItem(target))
         
-        table_widget.resizeColumnsToContents()
-        stats_layout.addWidget(table_widget)
+        self.building_stats_table.resizeColumnsToContents()
+        stats_layout.addWidget(self.building_stats_table)
 
         # Cap control toggle
         cap_layout = QHBoxLayout()
@@ -845,9 +1159,9 @@ class QtDashboard(QMainWindow):
         stats_layout.addLayout(cap_layout)
 
         # Stats summary
-        stats_summary = QLabel("Purchases Completed: 4,567 | Total Gold Spent: 89 Million")
-        stats_summary.setStyleSheet(theme.medium_label_style(margin_top=10))
-        stats_layout.addWidget(stats_summary)
+        self.stats_summary = QLabel("Purchases Completed: 4,567 | Total Gold Spent: 89 Million")
+        self.stats_summary.setStyleSheet(theme.medium_label_style(margin_top=10))
+        stats_layout.addWidget(self.stats_summary)
 
         stats_layout.addStretch()
         layout.addWidget(stats_panel)
@@ -882,9 +1196,9 @@ class QtDashboard(QMainWindow):
         soil_box.setStyleSheet(theme.metric_box_style())
         soil_layout = QVBoxLayout(soil_box)
         soil_layout.setAlignment(Qt.AlignCenter)
-        soil_value = QLabel("Oak")
-        soil_value.setStyleSheet(theme.large_label_style())
-        soil_layout.addWidget(soil_value)
+        self.garden_soil_value = QLabel("Oak")
+        self.garden_soil_value.setStyleSheet(theme.large_label_style())
+        soil_layout.addWidget(self.garden_soil_value)
         soil_label = QLabel("Current Soil Type")
         soil_label.setStyleSheet(theme.secondary_label_style())
         soil_layout.addWidget(soil_label)
@@ -895,9 +1209,9 @@ class QtDashboard(QMainWindow):
         cycle_box.setStyleSheet(theme.metric_box_style())
         cycle_layout = QVBoxLayout(cycle_box)
         cycle_layout.setAlignment(Qt.AlignCenter)
-        cycle_value = QLabel("3 days")
-        cycle_value.setStyleSheet(theme.large_label_style())
-        cycle_layout.addWidget(cycle_value)
+        self.garden_cycle_value = QLabel("3 days")
+        self.garden_cycle_value.setStyleSheet(theme.large_label_style())
+        cycle_layout.addWidget(self.garden_cycle_value)
         cycle_label = QLabel("Planting Cycle Remaining")
         cycle_label.setStyleSheet(theme.secondary_label_style())
         cycle_layout.addWidget(cycle_label)
@@ -906,9 +1220,9 @@ class QtDashboard(QMainWindow):
         garden_layout.addLayout(stats_grid)
 
         # Status label
-        status_label = QLabel("Status: Automation Active - Ready for Harvest.")
-        status_label.setStyleSheet(theme.accent_green_medium_label_style(margin_top=15))
-        garden_layout.addWidget(status_label)
+        self.garden_status_label = QLabel("Status: Automation Active - Ready for Harvest.")
+        self.garden_status_label.setStyleSheet(theme.accent_green_medium_label_style(margin_top=15))
+        garden_layout.addWidget(self.garden_status_label)
 
         garden_layout.addStretch()
         layout.addWidget(garden_panel)
@@ -929,6 +1243,11 @@ class QtDashboard(QMainWindow):
             self.hero_label.setStyleSheet(theme.accent_red_hero_label_style())
             return
 
+        # Guard against None payload from mock callbacks
+        if payload is None:
+            self.hero_label.setText("WAITING FOR DATA...")
+            return
+
         state = payload["state"]
         trade_stats = payload["trade_stats"]
         building_stats = payload["building_stats"]
@@ -947,7 +1266,8 @@ class QtDashboard(QMainWindow):
         last_golden_diag = state.get("last_golden_diag") or {}
 
         # Update header
-        uptime = max(0, int(time.monotonic() - float(state.get("started_at") or time.monotonic())))
+        started_at = state.get("started_at")
+        uptime = max(0, int(time.monotonic() - float(started_at if started_at is not None else time.monotonic())))
         uptime_text = time.strftime("%H:%M:%S", time.gmtime(uptime))
         active_text = "RUNNING" if state.get("active") else "PAUSED"
         self.hero_label.setText(f"{active_text} | Uptime: {uptime_text}")
@@ -988,6 +1308,7 @@ class QtDashboard(QMainWindow):
                 "upgrade": "upgrade_autobuy_enabled",
                 "ascension": "ascension_prep_enabled",
                 "main_autoclick": "main_cookie_clicking_enabled",
+                "shimmer_autoclick": "shimmer_autoclick_enabled",
             }.get(key)
             if state_key:
                 btn.setChecked(bool(state.get(state_key)))
@@ -1007,14 +1328,40 @@ class QtDashboard(QMainWindow):
         # Update settings tab
         self._update_settings_tab()
 
+        # Update gameplay tab (purchase progress, live status, trader)
+        self._update_gameplay_tab(
+            state,
+            last_building_diag,
+            last_upgrade_diag,
+            last_spell_diag,
+            last_wrinkler_diag,
+            last_bank_diag,
+            trade_stats,
+            garden_stats,
+            combo_stats,
+            building_stats,
+            ascension_prep_stats,
+        )
+        
+        # Update forecasts tab (lumps, golden cookies)
+        self._update_forecasts_tab(last_lump_diag, last_golden_diag)
+        
+        # Update feed tab
+        self._update_feed_tab(payload.get("feed", []))
+        
+        # Update diagnostics tab (shimmer RNG, building caps)
+        shimmer_stats = payload.get("shimmer_stats") or {}
+        building_entries = last_building_diag.get("buildings", [])
+        self._update_diagnostics_tab(shimmer_stats, building_entries, building_stats)
+
     def _update_gameplay_tab(self, state, building_diag, upgrade_diag, spell_diag,
                             wrinkler_diag, bank_diag, trade_stats, garden_stats,
                             combo_stats, building_stats, ascension_prep_stats):
         """Update gameplay tab widgets."""
-        # Purchase progress
-        cookies = float(bank_diag.get("cookies") or building_diag.get("cookies") or 0.0)
-        cookies_ps = float(building_diag.get("cookies_ps") or bank_diag.get("cookies_ps_raw_highest") or 0.0)
-        wrinkler_bank = float(wrinkler_diag.get("estimated_reward_attached") or 0.0)
+        # Purchase progress - use _safe_float to handle string values
+        cookies = self._safe_float(bank_diag.get("cookies") or building_diag.get("cookies"))
+        cookies_ps = self._safe_float(building_diag.get("cookies_ps") or bank_diag.get("cookies_ps_raw_highest"))
+        wrinkler_bank = self._safe_float(wrinkler_diag.get("estimated_reward_attached"))
 
         # Building progress
         building_price = building_diag.get("next_candidate_price")
@@ -1022,9 +1369,9 @@ class QtDashboard(QMainWindow):
         self.building_detail.setText(f"{building_name} ({self._format_number(building_price)})" if building_price else "-")
 
         if building_price and cookies_ps > 0:
-            progress = min(100.0, (cookies / float(building_price)) * 100.0)
+            progress = min(100.0, (cookies / self._safe_float(building_price)) * 100.0)
             self.building_cash_bar.setValue(int(progress))
-            eta = (float(building_price) - cookies) / cookies_ps if cookies < float(building_price) else 0
+            eta = (self._safe_float(building_price) - cookies) / cookies_ps if cookies < self._safe_float(building_price) else 0
             self.building_cash_label.setText(
                 f"{progress:.1f}% • ETA: {self._format_duration(eta)}" if eta > 0 else "Ready!"
             )
@@ -1035,7 +1382,7 @@ class QtDashboard(QMainWindow):
         # Building with bank
         if building_price and cookies_ps > 0:
             total = cookies + wrinkler_bank
-            progress = min(100.0, (total / float(building_price)) * 100.0)
+            progress = min(100.0, (total / self._safe_float(building_price)) * 100.0)
             self.building_bank_bar.setValue(int(progress))
             self.building_bank_label.setText(
                 f"{progress:.1f}% • Bank: {self._format_number(wrinkler_bank)}"
@@ -1050,9 +1397,9 @@ class QtDashboard(QMainWindow):
         self.upgrade_detail.setText(f"{upgrade_name} ({self._format_number(upgrade_price)})" if upgrade_price else "-")
 
         if upgrade_price and cookies_ps > 0:
-            progress = min(100.0, (cookies / float(upgrade_price)) * 100.0)
+            progress = min(100.0, (cookies / self._safe_float(upgrade_price)) * 100.0)
             self.upgrade_cash_bar.setValue(int(progress))
-            eta = (float(upgrade_price) - cookies) / cookies_ps if cookies < float(upgrade_price) else 0
+            eta = (self._safe_float(upgrade_price) - cookies) / cookies_ps if cookies < self._safe_float(upgrade_price) else 0
             self.upgrade_cash_label.setText(
                 f"{progress:.1f}% • ETA: {self._format_duration(eta)}" if eta > 0 else "Ready!"
             )
@@ -1063,7 +1410,7 @@ class QtDashboard(QMainWindow):
         # Upgrade with bank
         if upgrade_price and cookies_ps > 0:
             total = cookies + wrinkler_bank
-            progress = min(100.0, (total / float(upgrade_price)) * 100.0)
+            progress = min(100.0, (total / self._safe_float(upgrade_price)) * 100.0)
             self.upgrade_bank_bar.setValue(int(progress))
             self.upgrade_bank_label.setText(
                 f"{progress:.1f}% • Bank: {self._format_number(wrinkler_bank)}"
@@ -1073,10 +1420,10 @@ class QtDashboard(QMainWindow):
             self.upgrade_bank_label.setText("-")
 
         # Lucky reserve
-        hard_lucky = float(
+        hard_lucky = self._safe_float(
             upgrade_diag.get("hard_lucky_cookie_reserve") or
             building_diag.get("hard_lucky_cookie_reserve") or
-            bank_diag.get("hard_lucky_cookie_reserve") or 0.0
+            bank_diag.get("hard_lucky_cookie_reserve")
         )
         if hard_lucky > 0:
             progress = min(100.0, (cookies / hard_lucky) * 100.0)
@@ -1112,45 +1459,45 @@ class QtDashboard(QMainWindow):
         )
 
         # Progress bars
-        spell_magic = float(spell_diag.get("magic") or 0.0)
-        spell_max = float(spell_diag.get("max_magic") or 0.0)
+        spell_magic = self._safe_float(spell_diag.get("magic"))
+        spell_max = self._safe_float(spell_diag.get("max_magic"))
         self.mana_bar.setValue(int((spell_magic / spell_max * 100) if spell_max > 0 else 0))
 
-        wrinkler_attached = float(wrinkler_diag.get("attached") or 0.0)
-        wrinkler_max = float(wrinkler_diag.get("max") or 0.0)
+        wrinkler_attached = self._safe_float(wrinkler_diag.get("attached"))
+        wrinkler_max = self._safe_float(wrinkler_diag.get("max"))
         self.wrinkler_fill_bar.setValue(int((wrinkler_attached / wrinkler_max * 100) if wrinkler_max > 0 else 0))
 
-        exposure = float(bank_diag.get("portfolio_exposure_ratio") or 0.0)
+        exposure = self._safe_float(bank_diag.get("portfolio_exposure_ratio"))
         self.stock_exposure_bar.setValue(int(exposure * 100))
         self.stock_exposure_label.setText(
             f"{exposure*100:.1f}% | {self._format_number(bank_diag.get('portfolio_exposure'))}"
         )
 
-        ascension = float(state.get("last_ascension", {}).get("legacyMeterPercent") or 0.0)
+        ascension = self._safe_float(state.get("last_ascension", {}).get("legacyMeterPercent"))
         self.ascension_bar.setValue(int(ascension * 100))
 
         # Timing ETAs
         if building_price and cookies_ps > 0:
-            eta = max(0, (float(building_price) - cookies) / cookies_ps)
+            eta = max(0, (self._safe_float(building_price) - cookies) / cookies_ps)
             self.timing_labels["purchase_cash_eta"].setText(
-                f"{self._format_duration(eta)} | Shortfall: {self._format_number(max(0, float(building_price) - cookies))}"
+                f"{self._format_duration(eta)} | Shortfall: {self._format_number(max(0, self._safe_float(building_price) - cookies))}"
             )
-            bank_ready = (cookies + wrinkler_bank) >= float(building_price)
+            bank_ready = (cookies + wrinkler_bank) >= self._safe_float(building_price)
             self.timing_labels["purchase_bank_eta"].setText(
-                "Ready with bank" if bank_ready else f"Need {self._format_number(max(0, float(building_price) - (cookies + wrinkler_bank)))} more"
+                "Ready with bank" if bank_ready else f"Need {self._format_number(max(0, self._safe_float(building_price) - (cookies + wrinkler_bank)))} more"
             )
         else:
             self.timing_labels["purchase_cash_eta"].setText("-")
             self.timing_labels["purchase_bank_eta"].setText("-")
 
         if upgrade_price and cookies_ps > 0:
-            eta = max(0, (float(upgrade_price) - cookies) / cookies_ps)
+            eta = max(0, (self._safe_float(upgrade_price) - cookies) / cookies_ps)
             self.timing_labels["upgrade_cash_eta"].setText(
-                f"{self._format_duration(eta)} | Shortfall: {self._format_number(max(0, float(upgrade_price) - cookies))}"
+                f"{self._format_duration(eta)} | Shortfall: {self._format_number(max(0, self._safe_float(upgrade_price) - cookies))}"
             )
-            bank_ready = (cookies + wrinkler_bank) >= float(upgrade_price)
+            bank_ready = (cookies + wrinkler_bank) >= self._safe_float(upgrade_price)
             self.timing_labels["upgrade_bank_eta"].setText(
-                "Ready with bank" if bank_ready else f"Need {self._format_number(max(0, float(upgrade_price) - (cookies + wrinkler_bank)))} more"
+                "Ready with bank" if bank_ready else f"Need {self._format_number(max(0, self._safe_float(upgrade_price) - (cookies + wrinkler_bank)))} more"
             )
         else:
             self.timing_labels["upgrade_cash_eta"].setText("-")
@@ -1163,10 +1510,42 @@ class QtDashboard(QMainWindow):
             f"{combo_stats.get('status', '-')} | Last run: {self._format_duration(combo_stats.get('last_duration'))}"
         )
 
-        # Trader placeholder
+        # Wrinkler timing - use wrinkler_diag
+        wrinkler_diag = state.get("last_wrinkler_diag") or {}
+        goal_eta = wrinkler_diag.get("goal_eta_seconds")
+        if goal_eta:
+            self.timing_labels["wrinkler_goal_eta"].setText(self._format_duration(goal_eta))
+        else:
+            self.timing_labels["wrinkler_goal_eta"].setText("-")
+
+        target = wrinkler_diag.get("target")
+        if target:
+            self.timing_labels["wrinkler_target"].setText(str(target))
+        else:
+            self.timing_labels["wrinkler_target"].setText("-")
+
+        # Trader portfolio data
+        portfolio_val = trade_stats.get('portfolio_exposure')
+        held_goods = trade_stats.get('held_goods', 0)
+        held_shares = trade_stats.get('held_shares', 0)
+        realized_pnl = trade_stats.get('realized_pnl', 0)
+        unrealized_pnl = trade_stats.get('unrealized_pnl')
+        session_roi = trade_stats.get('session_roi')
+        
+        pnl_line = ""
+        if unrealized_pnl is not None:
+            pnl_emoji = "📈" if unrealized_pnl >= 0 else "📉"
+            pnl_line = f"{pnl_emoji} Unrealized: {self._format_number(unrealized_pnl)}"
+            if session_roi is not None:
+                roi_pct = float(session_roi) * 100
+                pnl_line += f" ({roi_pct:+.1f}%)"
+            pnl_line += "\n"
+        
         self.trader_chart_label.setText(
-            f"Portfolio: {self._format_number(trade_stats.get('portfolio_value'))}\n"
-            f"Held: {trade_stats.get('held_goods', 0)} goods, {trade_stats.get('held_shares', 0)} shares"
+            f"📊 Portfolio: {self._format_number(portfolio_val)}\n"
+            f"📦 Holdings: {held_goods} goods, {held_shares} shares\n"
+            f"{pnl_line}"
+            f"💰 Realized P&L: {self._format_number(realized_pnl)}"
         )
 
     def _update_forecasts_tab(self, lump_diag, golden_diag):
@@ -1177,25 +1556,27 @@ class QtDashboard(QMainWindow):
             stage = lump_diag.get("stage", "-")
             type_name = lump_diag.get("current_type_name", "normal")
             time_to_ripe = lump_diag.get("time_to_ripe_seconds")
+            time_to_overripe = lump_diag.get("time_to_overripe_seconds")
             modifiers = ", ".join(lump_diag.get("modifiers") or []) or "No active modifiers"
             self.lump_meta_label.setText(
-                f"{lumps} lumps • Next: {stage} {type_name} • "
-                f"Ripe in: {self._format_duration(time_to_ripe)}"
+                f"{lumps} lumps • Next: {stage} {type_name} lump • "
+                f"Ripe in {self._format_duration(time_to_ripe)} • "
+                f"Overripe in {self._format_duration(time_to_overripe)}"
             )
             self.lump_modifier_label.setText(modifiers)
-            self.lump_chart_label.setText(
-                f"Stage: {stage} • Age: {self._format_duration(lump_diag.get('age_ms', 0)/1000)}"
-            )
+            self.lump_chart_widget.set_data(lump_diag)
         else:
             self.lump_meta_label.setText("Sugar lumps are not unlocked yet.")
             self.lump_modifier_label.setText("-")
-            self.lump_chart_label.setText("Waiting for sugar lump unlock...")
+            self.lump_chart_widget.set_data({})
 
         # Golden cookies
         if golden_diag and golden_diag.get("available"):
             next_spawn = golden_diag.get("next_spawn_seconds")
             force_spawn = golden_diag.get("force_spawn_seconds")
             wrath = golden_diag.get("wrath_cookie", False)
+            on_screen = golden_diag.get("on_screen", 0)
+            spawn_windows = golden_diag.get("spawn_windows", [])
             self.gc_meta_label.setText(
                 f"Next spawn: {self._format_duration(next_spawn)}"
                 f"{' (Wrath)' if wrath else ''}"
@@ -1203,13 +1584,13 @@ class QtDashboard(QMainWindow):
             self.gc_detail_label.setText(
                 f"Force spawn: {self._format_duration(force_spawn)}" if force_spawn else "No force spawn pending"
             )
-            self.gc_chart_label.setText(
-                f"Spawn windows: {len(golden_diag.get('spawn_windows', []))} active"
-            )
+            # Update chart with full diagnostic data
+            golden_diag["_meta"] = f"On screen: {on_screen} | Windows: {len(spawn_windows)}"
+            self.gc_chart_widget.set_data(golden_diag)
         else:
             self.gc_meta_label.setText("Golden cookie timer data is unavailable.")
             self.gc_detail_label.setText("-")
-            self.gc_chart_label.setText("Waiting for golden cookie data...")
+            self.gc_chart_widget.set_data({})
 
     def _update_feed_tab(self, feed):
         """Update feed tab with color-coded events."""
@@ -1219,7 +1600,7 @@ class QtDashboard(QMainWindow):
             return
 
         for entry in reversed(feed):
-            timestamp = entry.get("timestamp", "")
+            timestamp = self._safe_float(entry.get("timestamp"))
             message = entry.get("message", "")
             category = entry.get("category", "event")
             self.feed_text.append(f"{timestamp:.1f}s: {message}")
@@ -1337,7 +1718,7 @@ class QtDashboard(QMainWindow):
             self.events_log.clear()
             if feed:
                 for entry in reversed(feed[-20:]):  # Show last 20 entries
-                    timestamp = entry.get("timestamp", "")
+                    timestamp = self._safe_float(entry.get("timestamp"))
                     message = entry.get("message", "")
                     self.events_log.append(f"{timestamp:.1f}s: {message}")
             else:
@@ -1345,14 +1726,33 @@ class QtDashboard(QMainWindow):
 
     def _update_building_stats_tab(self, building_stats, building_entries):
         """Update building stats tab."""
+        # Update table with building entries
+        if hasattr(self, 'building_stats_table') and building_entries:
+            self.building_stats_table.setRowCount(len(building_entries))
+            for row, entry in enumerate(building_entries):
+                name = entry.get("name", "-")
+                amount = entry.get("amount", 0)
+                cap = entry.get("cap", "-")
+                
+                self.building_stats_table.setItem(row, 0, QTableWidgetItem(name))
+                self.building_stats_table.setItem(row, 1, QTableWidgetItem(self._format_number(amount)))
+                self.building_stats_table.setItem(row, 2, QTableWidgetItem(str(cap) if cap != "-" else "-"))
+            
+            self.building_stats_table.resizeColumnsToContents()
+        
+        # Update stats summary
+        if hasattr(self, 'stats_summary'):
+            total_purchases = building_stats.get("total_purchases", 0)
+            total_gold = building_stats.get("total_gold_spent", 0)
+            self.stats_summary.setText(
+                f"Purchases Completed: {self._format_number(total_purchases)} | Total Gold Spent: {self._format_number(total_gold)}"
+            )
+        
         # Update cap ignore toggle state if exists
         if hasattr(self, 'cap_ignore_toggle'):
             ignored = building_stats.get("ignored_building_caps") or []
             # This is a simple representation; in reality would need more logic
             pass
-        
-        # Note: Building table is static mock data for now
-        # In a real implementation, we would update the table with building_entries
 
     def _update_garden_automation_tab(self, garden_stats, garden_diag):
         """Update garden automation tab."""
@@ -1364,8 +1764,24 @@ class QtDashboard(QMainWindow):
             else:
                 self.garden_progress_bar.setValue(65)  # default mock
         
-        # Note: Other garden stats are static for now
-        # Could update soil type, planting cycle from garden_diag
+        # Update soil type
+        if hasattr(self, 'garden_soil_value'):
+            soil = garden_diag.get("soil") or garden_stats.get("soil") or "Unknown"
+            self.garden_soil_value.setText(str(soil))
+        
+        # Update planting cycle (from garden_diag)
+        if hasattr(self, 'garden_cycle_value'):
+            cycle = garden_diag.get("next_tick") or garden_stats.get("next_tick") or "-"
+            if cycle != "-":
+                self.garden_cycle_value.setText(cycle)
+            else:
+                self.garden_cycle_value.setText("Ready")
+        
+        # Update status label
+        if hasattr(self, 'garden_status_label'):
+            status = garden_stats.get("status") or "Active"
+            last_garden = garden_stats.get("last_garden") or "None"
+            self.garden_status_label.setText(f"Status: {status} - Last: {last_garden}")
 
     def _update_settings_tab(self):
         """Update settings tab widgets."""
@@ -1389,6 +1805,19 @@ class QtDashboard(QMainWindow):
             self.config_status_label.setText("✅ Configuration saved!")
         except Exception as e:
             self.config_status_label.setText(f"❌ Error: {e}")
+
+    def _browse_game_directory(self):
+        """Open file dialog to browse for game directory."""
+        from PySide6.QtWidgets import QFileDialog
+        current_dir = self.game_path_entry.text() or ""
+        dir_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Cookie Clicker Installation Directory",
+            current_dir,
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        if dir_path:
+            self.game_path_entry.setText(dir_path)
 
     def _apply_building_cap(self, building_name, input_widget):
         """Apply building cap from input field."""
@@ -1427,11 +1856,23 @@ class QtDashboard(QMainWindow):
             return f"{num/1e3:.3f}K"
         return f"{num:.2f}"
 
+    def _safe_float(self, value, default=0.0):
+        """Safely convert value to float, returning default on failure."""
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+
     def _format_duration(self, seconds):
         """Format duration in seconds to human-readable string."""
         if seconds is None:
             return "-"
-        seconds = max(0, int(round(float(seconds))))
+        try:
+            seconds = max(0, int(round(float(seconds))))
+        except (ValueError, TypeError):
+            return "-"
         hours, remainder = divmod(seconds, 3600)
         minutes, secs = divmod(remainder, 60)
         if hours > 0:

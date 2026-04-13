@@ -34,6 +34,14 @@ class DashboardCallbacks:
 
 
 def build_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refresh_interval_ms: int):
+    """Build a dashboard. Prefers PySide6 if available, falls back to Tkinter."""
+    if QT_AVAILABLE:
+        return build_qt_dashboard(
+            callbacks=callbacks,
+            initial_geometry=initial_geometry,
+            refresh_interval_ms=refresh_interval_ms,
+        )
+    # Fallback to Tk
     return BotDashboard(
         get_dashboard_state=callbacks.get_dashboard_state,
         toggle_active=callbacks.toggle_active,
@@ -64,6 +72,12 @@ def build_qt_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refre
         raise RuntimeError(
             "PySide6 is not available. Install it via 'pip install PySide6'."
         )
+    # Ensure QApplication exists before creating Qt widgets
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None:
+        import sys
+        app = QApplication(sys.argv)
     return QtDashboard(
         get_dashboard_state=callbacks.get_dashboard_state,
         toggle_active=callbacks.toggle_active,

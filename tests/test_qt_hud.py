@@ -174,7 +174,6 @@ def _create_test_window(qtbot, refresh_interval_ms=1000):
 
 
 @pytest.mark.qt
-@pytest.mark.xfail(reason="Shimmer autoclick toggle button not yet implemented")
 def test_qt_dashboard_has_shimmer_autoclick_toggle(qtbot):
     """Check that shimmer autoclick toggle button exists."""
     window = _create_test_window(qtbot)
@@ -182,8 +181,7 @@ def test_qt_dashboard_has_shimmer_autoclick_toggle(qtbot):
 
 
 @pytest.mark.qt
-@pytest.mark.xfail(reason="Missing tabs: Gameplay, Forecasts, Feed, Diagnostics")
-def test_qt_dashboard_has_missing_tabs(qtbot):
+def test_qt_dashboard_has_all_tabs(qtbot):
     """Check that all tabs from hud_gui.py are present."""
     window = _create_test_window(qtbot)
     tab_widget = window.tab_widget
@@ -194,7 +192,6 @@ def test_qt_dashboard_has_missing_tabs(qtbot):
 
 
 @pytest.mark.qt
-@pytest.mark.xfail(reason="Settings checkboxes not yet implemented")
 def test_qt_dashboard_has_settings_checkboxes(qtbot):
     """Check that auto-launch and register hotkeys checkboxes exist."""
     window = _create_test_window(qtbot)
@@ -203,7 +200,6 @@ def test_qt_dashboard_has_settings_checkboxes(qtbot):
 
 
 @pytest.mark.qt
-@pytest.mark.xfail(reason="Horizon preset buttons not yet implemented")
 def test_qt_dashboard_has_horizon_preset_buttons(qtbot):
     """Check that horizon preset buttons (3m, 15m, etc.) exist."""
     from PySide6.QtWidgets import QPushButton
@@ -215,7 +211,6 @@ def test_qt_dashboard_has_horizon_preset_buttons(qtbot):
 
 
 @pytest.mark.qt
-@pytest.mark.xfail(reason="Purchase panel not yet implemented")
 def test_qt_dashboard_has_purchase_panel(qtbot):
     """Check that purchase panel UI elements exist."""
     window = _create_test_window(qtbot)
@@ -230,7 +225,6 @@ def test_qt_dashboard_has_purchase_panel(qtbot):
 
 
 @pytest.mark.qt
-@pytest.mark.xfail(reason="Live status summary variables not yet implemented")
 def test_qt_dashboard_has_live_status_summary(qtbot):
     """Check that live status summary variables exist."""
     window = _create_test_window(qtbot)
@@ -240,9 +234,8 @@ def test_qt_dashboard_has_live_status_summary(qtbot):
 
 
 @pytest.mark.qt
-@pytest.mark.xfail(reason="Charts not yet implemented")
 def test_qt_dashboard_has_charts(qtbot):
-    """Check that lump, golden cookie, and trader charts exist."""
+    """Check that lump, golden cookie, and trader charts exist (as text placeholders)."""
     window = _create_test_window(qtbot)
     chart_attrs = ['lump_chart', 'golden_cookie_chart', 'trader_chart']
     for attr in chart_attrs:
@@ -250,7 +243,6 @@ def test_qt_dashboard_has_charts(qtbot):
 
 
 @pytest.mark.qt
-@pytest.mark.xfail(reason="Shimmer RNG panel not yet implemented")
 def test_qt_dashboard_has_shimmer_rng_panel(qtbot):
     """Check that shimmer RNG panel elements exist."""
     window = _create_test_window(qtbot)
@@ -260,8 +252,181 @@ def test_qt_dashboard_has_shimmer_rng_panel(qtbot):
 
 
 @pytest.mark.qt
-@pytest.mark.xfail(reason="Building caps rows functionality not yet implemented")
 def test_qt_dashboard_has_building_caps_rows(qtbot):
     """Check that building cap rows dictionary exists."""
     window = _create_test_window(qtbot)
     assert hasattr(window, 'building_cap_rows')
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_all_toggle_buttons(qtbot):
+    """Check that all toggle buttons are present."""
+    window = _create_test_window(qtbot)
+    expected_toggles = [
+        "active", "stock", "lucky_reserve", "building", "upgrade", "ascension",
+        "main_autoclick", "shimmer_autoclick"
+    ]
+    for toggle in expected_toggles:
+        assert toggle in window.toggle_buttons, f"Missing toggle button: {toggle}"
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_header_labels(qtbot):
+    """Check that header labels (hero, meta, last_actions) exist."""
+    window = _create_test_window(qtbot)
+    assert hasattr(window, 'hero_label')
+    assert hasattr(window, 'meta_label')
+    assert hasattr(window, 'last_actions_label')
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_wrinkler_button(qtbot):
+    """Check that wrinkler mode button exists."""
+    window = _create_test_window(qtbot)
+    assert hasattr(window, 'wrinkler_btn')
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_exit_button(qtbot):
+    """Check that exit button exists in footer."""
+    from PySide6.QtWidgets import QPushButton
+    window = _create_test_window(qtbot)
+    buttons = window.findChildren(QPushButton)
+    exit_btn = any("Exit" in btn.text() for btn in buttons)
+    assert exit_btn
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_building_horizon_controls(qtbot):
+    """Check that building horizon controls exist."""
+    window = _create_test_window(qtbot)
+    assert hasattr(window, 'building_horizon_spin')
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_upgrade_horizon_controls(qtbot):
+    """Check that upgrade horizon controls exist."""
+    window = _create_test_window(qtbot)
+    assert hasattr(window, 'upgrade_horizon_spin')
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_settings_tab_controls(qtbot):
+    """Check that settings tab controls exist."""
+    window = _create_test_window(qtbot)
+    assert hasattr(window, 'game_path_entry')
+    assert hasattr(window, 'browse_btn')
+    from PySide6.QtWidgets import QPushButton
+    buttons = window.findChildren(QPushButton)
+    hasSaveBtn = any("Save" in btn.text() for btn in buttons)
+    assert hasSaveBtn
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_forecasts_tab_labels(qtbot):
+    """Check that forecasts tab labels exist."""
+    window = _create_test_window(qtbot)
+    forecast_attrs = [
+        'lump_meta_label', 'lump_modifier_label', 'lump_chart_widget',
+        'gc_meta_label', 'gc_detail_label', 'gc_chart_widget'
+    ]
+    for attr in forecast_attrs:
+        assert hasattr(window, attr), f"Missing forecast attribute: {attr}"
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_feed_tab(qtbot):
+    """Check that feed tab exists."""
+    window = _create_test_window(qtbot)
+    assert hasattr(window, 'feed_text')
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_trader_chart_label(qtbot):
+    """Check that trader chart label exists in Gameplay tab."""
+    window = _create_test_window(qtbot)
+    assert hasattr(window, 'trader_chart_label')
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_summary_labels(qtbot):
+    """Check that summary_labels dictionary exists with core keys."""
+    window = _create_test_window(qtbot)
+    assert hasattr(window, 'summary_labels')
+    expected_keys = ['cookies', 'spell', 'stock', 'buildings', 'garden', 'combo', 'buffs']
+    for key in expected_keys:
+        assert key in window.summary_labels, f"Missing summary_labels key: {key}"
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_timing_labels(qtbot):
+    """Check that timing_labels dictionary exists with keys."""
+    window = _create_test_window(qtbot)
+    assert hasattr(window, 'timing_labels')
+    expected_keys = [
+        'purchase_cash_eta', 'purchase_bank_eta', 'upgrade_cash_eta', 'upgrade_bank_eta',
+        'wrinkler_goal_eta', 'wrinkler_target'
+    ]
+    for key in expected_keys:
+        assert key in window.timing_labels, f"Missing timing_labels key: {key}"
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_progress_bars(qtbot):
+    """Check that all progress bars exist."""
+    window = _create_test_window(qtbot)
+    progress_bars = [
+        'building_cash_bar', 'building_bank_bar', 'upgrade_cash_bar', 'upgrade_bank_bar',
+        'lucky_reserve_bar', 'mana_bar', 'wrinkler_fill_bar',
+        'stock_exposure_bar', 'ascension_bar'
+    ]
+    for bar in progress_bars:
+        assert hasattr(window, bar), f"Missing progress bar: {bar}"
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_building_stats_tab(qtbot):
+    """Check that Building Stats tab exists (Qt extra)."""
+    window = _create_test_window(qtbot)
+    tab_widget = window.tab_widget
+    tab_names = [tab_widget.tabText(i) for i in range(tab_widget.count())]
+    hasBuildingStats = any("\U0001f9f1" in name or "Building Stats" in name for name in tab_names)
+    assert hasBuildingStats
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_garden_automation_tab(qtbot):
+    """Check that Garden Automation tab exists (Qt extra)."""
+    window = _create_test_window(qtbot)
+    tab_widget = window.tab_widget
+    tab_names = [tab_widget.tabText(i) for i in range(tab_widget.count())]
+    hasGarden = any("\U0001f331" in name or "Garden" in name for name in tab_names)
+    assert hasGarden
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_status_logs_tab(qtbot):
+    """Check that Status & Logs tab exists (Qt extra)."""
+    window = _create_test_window(qtbot)
+    tab_widget = window.tab_widget
+    tab_names = [tab_widget.tabText(i) for i in range(tab_widget.count())]
+    hasStatus = any("Status" in name or "Logs" in name for name in tab_names)
+    assert hasStatus
+
+
+@pytest.mark.qt
+def test_qt_dashboard_initial_refresh(qtbot):
+    """Test that initial refresh populates data."""
+    callbacks = MockCallbacks()
+    window = _create_test_window(qtbot, refresh_interval_ms=100)
+    qtbot.wait(150)
+    hero_text = window.hero_label.text()
+    assert "RUNNING" in hero_text or "PAUSED" in hero_text or "INIT" in hero_text
+
+
+@pytest.mark.qt
+def test_qt_dashboard_compatibility_aliases(qtbot):
+    """Check that compatibility aliases map correctly."""
+    window = _create_test_window(qtbot)
+    assert window.summary_vars is window.summary_labels
+    assert window.timing_vars is window.timing_labels

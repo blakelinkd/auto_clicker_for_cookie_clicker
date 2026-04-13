@@ -16,6 +16,9 @@ keyboard_datas, keyboard_binaries, keyboard_hiddenimports = collect_all('keyboar
 # Collect pyautogui and its dependencies
 pyautogui_datas, pyautogui_binaries, pyautogui_hiddenimports = collect_all('pyautogui')
 
+# Get all keyboard submodules explicitly
+keyboard_submodules = collect_submodules('keyboard')
+
 a = Analysis(
     ['main.py'],
     pathex=[str(project_root)],
@@ -27,16 +30,33 @@ a = Analysis(
     hiddenimports=[
         'keyboard',
         'keyboard._keyboard',
+        'keyboard._winkeyboard',
+        'keyboard._winmouse',
+        'keyboard._nixkeyboard',
+        'keyboard._nixmouse',
+        'keyboard._generic',
+        'keyboard._canonical_names',
+        'keyboard.mouse',
         'win32api',
         'win32gui',
         'win32con',
         'win32process',
         'win32ts',
+        'win32api',
+        'win32con',
+        'win32gui',
+        'win32process',
+        'win32file',
+        'win32pipe',
+        'win32net',
+        'win32netcon',
+        'win32security',
+        'ntsecuritycon',
         'PySide6',
         'PySide6.QtCore',
         'PySide6.QtGui',
         'PySide6.QtWidgets',
-    ] + keyboard_hiddenimports + pyautogui_hiddenimports,
+    ] + keyboard_hiddenimports + keyboard_submodules + pyautogui_hiddenimports,
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],

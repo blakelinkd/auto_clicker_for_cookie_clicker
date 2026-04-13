@@ -19,14 +19,14 @@ AppUpdatesURL={#MyAppURL}/releases
 DefaultDirName={autopf}\Cookie Clicker Auto-Clicker
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-OutputDir=dist\installer
+OutputDir=..\dist\installer
 OutputBaseFilename=CookieClickerAutoClicker_Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 UninstallDisplayIcon={app}\{#MyAppExeName}
-LicenseFile=LICENSE
+LicenseFile=..\docs\LICENSE
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

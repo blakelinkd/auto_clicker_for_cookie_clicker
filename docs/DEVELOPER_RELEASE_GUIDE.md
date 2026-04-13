@@ -25,19 +25,19 @@ No additional setup required - the release workflow runs on GitHub's Windows run
 ### Full Build (exe + installer)
 
 ```bash
-python build_installer.py
+python installer/build_installer.py
 ```
 
 Output:
-- `dist/main/CookieClickerAutoClicker.exe` - Frozen executable
-- `dist/installer/CookieClickerAutoClicker_Setup.exe` - Windows installer
+- `installer/dist/main/CookieClickerAutoClicker.exe` - Frozen executable
+- `installer/dist/installer/CookieClickerAutoClicker_Setup.exe` - Windows installer
 
 ### Build Options
 
 | Flag | Description |
 |------|-------------|
 | `--pyinstaller-only` | Build only the frozen exe (skip installer) |
-| `--installer-only` | Build only the installer (requires existing exe in `dist/main/`) |
+| `--installer-only` | Build only the installer (requires existing exe in `installer/dist/main/`) |
 
 ### Build Without Cleaning
 
@@ -45,7 +45,7 @@ To rebuild without deleting old files (faster):
 
 ```bash
 # Just run PyInstaller directly (bypasses the clean step)
-python -m PyInstaller pyinstaller.spec --noconfirm
+python -m PyInstaller installer/pyinstaller.spec --noconfirm
 ```
 
 ---
@@ -136,9 +136,9 @@ Then manually test the installer before creating a tag.
 
 | File | Purpose |
 |------|---------|
-| `pyinstaller.spec` | PyInstaller configuration |
-| `installer.iss` | Inno Setup script |
-| `build_installer.py` | Local build automation |
+| `installer/pyinstaller.spec` | PyInstaller configuration |
+| `installer/installer.iss` | Inno Setup script |
+| `installer/build_installer.py` | Local build automation |
 | `.github/workflows/release.yml` | GitHub Actions release workflow |
 
 ---

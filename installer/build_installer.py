@@ -24,12 +24,11 @@ import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).parent.resolve()
-DIST_DIR = PROJECT_ROOT / "dist"
-INSTALLER_OUTPUT_DIR = DIST_DIR / "installer"
-BUILD_DIR = PROJECT_ROOT / "build"
-SPEC_FILE = PROJECT_ROOT / "pyinstaller.spec"
-INNO_SETUP_SCRIPT = PROJECT_ROOT / "installer.iss"
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+DIST_DIR = PROJECT_ROOT / "installer" / "dist"
+BUILD_DIR = PROJECT_ROOT / "installer" / "build"
+SPEC_FILE = PROJECT_ROOT / "installer" / "pyinstaller.spec"
+INNO_SETUP_SCRIPT = PROJECT_ROOT / "installer" / "installer.iss"
 
 INNO_INSTALL_URL = "https://jrsoftware.org/isdl.php"
 

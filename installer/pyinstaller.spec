@@ -6,7 +6,7 @@ from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 
-project_root = Path(SPECPATH)
+project_root = Path(SPECPATH).parent.resolve()
 cookie_mod_src = project_root / 'cookie_shimmer_bridge_mod'
 qt_hud_src = project_root / 'qt_hud'
 

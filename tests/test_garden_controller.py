@@ -1,6 +1,6 @@
 import unittest
 
-from garden_controller import GardenController
+from clicker_bot.features.garden_controller import GardenController
 
 
 def _identity_point(x, y):

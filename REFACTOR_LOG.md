@@ -27,7 +27,7 @@ Tests live under [`tests/`](tests/); [`pytest.ini`](pytest.ini) sets `testpaths 
 | [`clicker_bot/app.py`](clicker_bot/app.py) | `BotApplication`: hotkeys, `sync_mod_files`, launch/focus game, builds dashboard via `clicker.start_dashboard()`, runs Tk main loop. Takes the **`clicker` legacy module** as `legacy_module` (see `build_default_application`). |
 | [`clicker.py`](clicker.py) | **Large legacy module**: globals, feature wiring, `dom_loop()`, `click_loop()`, `start_dashboard()`, toggles, feed I/O, Win32/game interaction. **Goal is to shrink and eventually replace** with thin wiring; new logic belongs in `clicker_bot/` or feature modules, not new sprawling code here. |
 | [`clicker_bot/`](clicker_bot/) | New shell: runtime, controls, activation, lifecycle, `dom_loop.py`, `dom_loop_services.py`, policies (`reserve_policy`, `pause_policy`, `startup_policy`), diagnostics, dashboard factory. **Prefer adding code here** when extracting from `clicker.py`. |
-| Top-level `*_controller.py`, `stock_trader.py`, etc. | Feature logic (garden, stock, buildings, spells, …). Keep behavior stable; integrate behind clearer interfaces over time. |
+| [`clicker_bot/features/`](clicker_bot/features/) | Feature logic (garden, stock, buildings, spells, wrinklers, combos, ascension). Keep behavior stable; integrate behind clearer interfaces over time. |
 | [`hud_gui.py`](hud_gui.py) | **Tkinter HUD** (`BotDashboard`). Built through [`clicker_bot/dashboard.py`](clicker_bot/dashboard.py) (`DashboardCallbacks` → `build_dashboard`). Planned migration to **PySide6** (separate epic below). |
 
 ### Architecture snapshot
@@ -586,6 +586,23 @@ Phases **0–31** were documented before tests moved to `tests/` (Phase 32). Old
 - All existing tests pass; Qt HUD tests run successfully with `pytest-qt`.
 - The full test suite now passes 231 tests (up from 223).
 
+### Phase 38: Feature module reorganization
+
+- Moved feature modules from root level into `clicker_bot/features/` package:
+  - `ascension_prep.py` → `clicker_bot/features/ascension_prep.py`
+  - `building_autobuyer.py` → `clicker_bot/features/building_autobuyer.py`
+  - `building_store.py` → `clicker_bot/features/building_store.py`
+  - `combo_evaluator.py` → `clicker_bot/features/combo_evaluator.py`
+  - `garden_controller.py` → `clicker_bot/features/garden_controller.py`
+  - `godzamok_combo.py` → `clicker_bot/features/godzamok_combo.py`
+  - `spell_autocaster.py` → `clicker_bot/features/spell_autocaster.py`
+  - `stock_trader.py` → `clicker_bot/features/stock_trader.py`
+  - `upgrade_store.py` → `clicker_bot/features/upgrade_store.py`
+  - `wrinkler_controller.py` → `clicker_bot/features/wrinkler_controller.py`
+- Updated imports in `clicker.py`, tests, and cross-references in feature modules to use new paths.
+- Deleted obsolete artifacts (`stderr.txt`, `hud_mockup.html`).
+- Root level now only contains entrypoints (`main.py`, `clicker.py`) and build utilities.
+
 ## Current State
 
 - `main.py` is the intended entrypoint.
@@ -603,6 +620,7 @@ Phases **0–31** were documented before tests moved to `tests/` (Phase 32). Old
 - Startup timing and launch gating now also live under `clicker_bot/startup_policy.py`, reducing another compatibility-only helper slice in `clicker.py`.
 - Pause/garden action gating helpers now also live under `clicker_bot/pause_policy.py`, reducing another pure policy slice in `clicker.py`.
 - The test suite is currently green.
+- Feature modules (`garden_controller`, `stock_trader`, `building_autobuyer`, `building_store`, `upgrade_store`, `wrinkler_controller`, `spell_autocaster`, `godzamok_combo`, `ascension_prep`, `combo_evaluator`) now live under `clicker_bot/features/`.
 - **Parallel Qt HUD:** A new PySide6-based dashboard is available in `qt_hud/hud_qt.py` with a standalone launcher `qt_hud/run_qt_hud.py`; not yet integrated into the bot runtime.
 - **Contributor workflow:** use the **Git workflow and branching** section above for all new refactor slices (one topic branch per vertical slice, merge to `master`).
 

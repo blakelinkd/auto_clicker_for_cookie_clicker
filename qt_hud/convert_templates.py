@@ -6,8 +6,8 @@ import re
 import sys
 from pathlib import Path
 
-theme_path = Path(__file__).parent / "qt_hud" / "styles" / "theme.py"
-qss_dir = Path(__file__).parent / "qt_hud" / "styles" / "qss"
+theme_path = Path(__file__).parent / "styles" / "theme.py"
+qss_dir = Path(__file__).parent / "styles" / "qss"
 
 # Read theme.py source
 with open(theme_path, "r", encoding="utf-8") as f:

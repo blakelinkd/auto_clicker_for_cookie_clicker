@@ -3,13 +3,13 @@ import math
 import re
 import time
 
-from building_autobuyer import (
+from clicker_bot.features.building_autobuyer import (
     DEFAULT_RESERVE_COOKIES,
     DEFAULT_RESERVE_CPS_SECONDS,
     MAX_BUILDING_SPEND_RATIO,
 )
-from building_store import BuildingStoreController
-from combo_evaluator import (
+from clicker_bot.features.building_store import BuildingStoreController
+from clicker_bot.features.combo_evaluator import (
     CLICK_STACK_BUFF_KEYS,
     evaluate_combo_buffs,
 )

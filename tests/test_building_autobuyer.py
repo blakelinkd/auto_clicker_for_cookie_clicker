@@ -1,6 +1,6 @@
 import unittest
 
-from building_autobuyer import BuildingAutobuyer
+from clicker_bot.features.building_autobuyer import BuildingAutobuyer
 
 
 class _LogStub:

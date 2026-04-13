@@ -62,17 +62,17 @@ from clicker_bot.stock_helpers import (
 )
 from clicker_bot.upgrade_diagnostics import build_upgrade_diag
 
-from ascension_prep import AscensionPrepController
-from building_autobuyer import BuildingAutobuyer
-from building_store import BuildingStoreController
-from combo_evaluator import PRODUCTION_STACK_BUFF_KEYS, VALUABLE_BUFF_KEYS, evaluate_combo_buffs
-from garden_controller import GardenController
-from godzamok_combo import GodzamokComboEngine
-from spell_autocaster import SpellAutocaster, CRAFTY_PIXIES_BUFF
+from clicker_bot.features.ascension_prep import AscensionPrepController
+from clicker_bot.features.building_autobuyer import BuildingAutobuyer
+from clicker_bot.features.building_store import BuildingStoreController
+from clicker_bot.features.combo_evaluator import PRODUCTION_STACK_BUFF_KEYS, VALUABLE_BUFF_KEYS, evaluate_combo_buffs
+from clicker_bot.features.garden_controller import GardenController
+from clicker_bot.features.godzamok_combo import GodzamokComboEngine
+from clicker_bot.features.spell_autocaster import SpellAutocaster, CRAFTY_PIXIES_BUFF
 from stock_db import StockDatabase
-from stock_trader import StockTrader
-from upgrade_store import UpgradeStoreController
-from wrinkler_controller import (
+from clicker_bot.features.stock_trader import StockTrader
+from clicker_bot.features.upgrade_store import UpgradeStoreController
+from clicker_bot.features.wrinkler_controller import (
     WrinklerController,
     WRINKLER_MODE_HOLD,
     WRINKLER_MODE_SEASONAL_FARM,

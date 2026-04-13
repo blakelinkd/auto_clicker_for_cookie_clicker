@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import time
 
-from combo_evaluator import VALUABLE_BUFF_KEYS, evaluate_combo_buffs
+from clicker_bot.features.combo_evaluator import VALUABLE_BUFF_KEYS, evaluate_combo_buffs
 HAND_OF_FATE_KEY = "hand of fate"
 HAGGLERS_CHARM_KEY = "haggler's charm"
 STRETCH_TIME_KEY = "stretch time"

@@ -7,7 +7,7 @@ import ast
 import sys
 from pathlib import Path
 
-theme_path = Path(__file__).parent / "qt_hud" / "styles" / "theme.py"
+theme_path = Path(__file__).parent / "styles" / "theme.py"
 output_path = theme_path.parent / "templates.qss"
 
 # Read theme.py source

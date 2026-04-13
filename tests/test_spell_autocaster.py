@@ -1,6 +1,6 @@
 import unittest
 
-from spell_autocaster import (
+from clicker_bot.features.spell_autocaster import (
     CRAFTY_PIXIES_KEY,
     HAND_OF_FATE_KEY,
     RESURRECT_ABOMINATION_KEY,

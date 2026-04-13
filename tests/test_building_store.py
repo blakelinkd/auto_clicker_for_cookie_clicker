@@ -1,6 +1,6 @@
 import unittest
 
-from building_store import BuildingStoreController
+from clicker_bot.features.building_store import BuildingStoreController
 
 
 def _identity_point(x, y):

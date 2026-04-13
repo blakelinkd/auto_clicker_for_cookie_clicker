@@ -1,6 +1,6 @@
 import unittest
 
-from upgrade_store import UpgradeStoreController
+from clicker_bot.features.upgrade_store import UpgradeStoreController
 
 
 def _identity_point(x, y):

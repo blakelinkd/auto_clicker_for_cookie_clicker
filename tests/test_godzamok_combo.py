@@ -1,6 +1,6 @@
 import unittest
 
-from godzamok_combo import GodzamokComboEngine
+from clicker_bot.features.godzamok_combo import GodzamokComboEngine
 
 
 class _LogStub:

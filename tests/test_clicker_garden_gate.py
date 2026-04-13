@@ -9,7 +9,7 @@ from clicker_bot.pause_policy import (
     should_allow_garden_action,
     should_allow_non_click_actions_during_pause,
 )
-from garden_controller import GardenController
+from clicker_bot.features.garden_controller import GardenController
 
 
 PRODUCTION_STACK_BUFF_KEYS = {

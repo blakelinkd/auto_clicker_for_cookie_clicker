@@ -6,13 +6,11 @@ import re
 import sys
 from pathlib import Path
 
-# Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from qt_hud.styles.theme import COLORS
+from styles.theme import COLORS
 
-# Read theme.py source
-theme_path = Path(__file__).parent / "qt_hud" / "styles" / "theme.py"
+theme_path = Path(__file__).parent / "styles" / "theme.py"
 with open(theme_path, "r", encoding="utf-8") as f:
     source = f.read()
 
@@ -86,7 +84,7 @@ for name, body in list(functions.items()):
         del functions[name]
 
 # Write each template to qss directory
-qss_dir = Path(__file__).parent / "qt_hud" / "styles" / "qss"
+qss_dir = Path(__file__).parent / "styles" / "qss"
 qss_dir.mkdir(exist_ok=True)
 
 for name, css in functions.items():

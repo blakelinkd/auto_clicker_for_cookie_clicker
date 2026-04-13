@@ -1,6 +1,6 @@
 import unittest
 
-from stock_trader import StockTrader, TradeAction
+from clicker_bot.features.stock_trader import StockTrader, TradeAction
 
 
 class _LogStub:

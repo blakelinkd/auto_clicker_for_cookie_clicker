@@ -54,7 +54,7 @@ class BotApplicationTests(unittest.TestCase):
             _launch_game_if_needed=lambda: calls.append("launch_game") or False,
             get_game_window=lambda log_missing=False: calls.append(("get_game_window", log_missing)) or (1, 2, 3, 4),
             _focus_game_window=lambda: calls.append("focus_game_window"),
-            start_dashboard=lambda: calls.append("start_dashboard") or dashboard,
+            start_dashboard=lambda use_qt_hud=False: calls.append("start_dashboard") or dashboard,
         )
 
         app = BotApplication(legacy, config=AppConfig(register_hotkeys=True, auto_launch_game=True))

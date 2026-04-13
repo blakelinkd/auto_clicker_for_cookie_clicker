@@ -1,6 +1,6 @@
 import unittest
 
-from wrinkler_controller import WrinklerController, WRINKLER_MODE_SHINY_HUNT
+from clicker_bot.features.wrinkler_controller import WrinklerController, WRINKLER_MODE_SHINY_HUNT
 
 
 class _LogStub:

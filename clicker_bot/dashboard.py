@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional, Any
 
-from hud_gui import BotDashboard
+from clicker_bot.legacy.hud_gui import BotDashboard
 
 try:
     from qt_hud.hud_qt import QtDashboard

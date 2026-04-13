@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from stock_db import StockDatabase
+from clicker_bot.features.stock_db import StockDatabase
 
 
 class _LogStub:

@@ -69,7 +69,7 @@ from clicker_bot.features.combo_evaluator import PRODUCTION_STACK_BUFF_KEYS, VAL
 from clicker_bot.features.garden_controller import GardenController
 from clicker_bot.features.godzamok_combo import GodzamokComboEngine
 from clicker_bot.features.spell_autocaster import SpellAutocaster, CRAFTY_PIXIES_BUFF
-from stock_db import StockDatabase
+from clicker_bot.features.stock_db import StockDatabase
 from clicker_bot.features.stock_trader import StockTrader
 from clicker_bot.features.upgrade_store import UpgradeStoreController
 from clicker_bot.features.wrinkler_controller import (

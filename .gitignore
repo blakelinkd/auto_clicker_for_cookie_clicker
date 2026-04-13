@@ -25,3 +25,7 @@ PREDICTOR.md
 
 # Bot configuration
 cookie_bot_config.json
+
+# Build artifacts (do not commit)
+dist/
+build/

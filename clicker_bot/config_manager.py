@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -6,6 +8,21 @@ from .config import AppConfig
 
 
 CONFIG_FILE_NAME = "cookie_bot_config.json"
+
+
+def _get_config_dir() -> Path:
+    r"""Get config directory, handling frozen vs development mode.
+    
+    In frozen mode (PyInstaller), use %LOCALAPPDATA%\CookieClickerAutoClicker.
+    In development mode, use current working directory (portable).
+    """
+    if getattr(sys, 'frozen', False):
+        local_app_data = os.environ.get('LOCALAPPDATA')
+        if local_app_data:
+            config_dir = Path(local_app_data) / 'CookieClickerAutoClicker'
+            config_dir.mkdir(parents=True, exist_ok=True)
+            return config_dir
+    return Path.cwd()
 
 
 def _config_to_dict(config: AppConfig) -> Dict[str, Any]:
@@ -34,7 +51,7 @@ def _dict_to_config(data: Dict[str, Any]) -> AppConfig:
 def load_config(config_path: Optional[Path] = None) -> AppConfig:
     """Load configuration from JSON file, or return default if file doesn't exist."""
     if config_path is None:
-        config_path = Path.cwd() / CONFIG_FILE_NAME
+        config_path = _get_config_dir() / CONFIG_FILE_NAME
     if not config_path.exists():
         return AppConfig()
     try:
@@ -50,7 +67,7 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
 def save_config(config: AppConfig, config_path: Optional[Path] = None) -> None:
     """Save configuration to JSON file."""
     if config_path is None:
-        config_path = Path.cwd() / CONFIG_FILE_NAME
+        config_path = _get_config_dir() / CONFIG_FILE_NAME
     data = _config_to_dict(config)
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)

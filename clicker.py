@@ -139,7 +139,18 @@ FEED_PATH = Path(
     r"D:\SteamLibrary\steamapps\common\Cookie Clicker\resources\app\file_outputs\shimmers.txt"
 )
 GAME_EXE_PATH = Path(r"D:\SteamLibrary\steamapps\common\Cookie Clicker\Cookie Clicker.exe")
-DB_PATH = Path("clicker.sqlite3")
+
+if getattr(sys, 'frozen', False):
+    local_app_data = os.environ.get('LOCALAPPDATA')
+    if local_app_data:
+        db_dir = Path(local_app_data) / 'CookieClickerAutoClicker'
+        db_dir.mkdir(parents=True, exist_ok=True)
+        DB_PATH = db_dir / "clicker.sqlite3"
+    else:
+        DB_PATH = Path("clicker.sqlite3")
+else:
+    DB_PATH = Path("clicker.sqlite3")
+
 MOD_SOURCE_DIR = Path("cookie_shimmer_bridge_mod")
 MOD_INSTALL_DIR = Path(r"D:\SteamLibrary\steamapps\common\Cookie Clicker\resources\app\mods\local\shimmerBridge")
 MOD_SYNC_FILES = ("main.js", "info.txt")
@@ -247,9 +258,22 @@ class HudBufferHandler(logging.Handler):
 
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
-file_handler = logging.FileHandler("clicker.log", mode="a")
-file_handler.setLevel(logging.DEBUG)
-file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+
+if getattr(sys, 'frozen', False):
+    log_dir = Path(sys._MEIPASS)
+else:
+    log_dir = Path.cwd()
+
+log_file_path = log_dir / "clicker.log"
+try:
+    file_handler = logging.FileHandler(str(log_file_path), mode="a")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+except (PermissionError, OSError):
+    file_handler = logging.StreamHandler()
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.WARNING)
 console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
@@ -1606,6 +1630,11 @@ def _file_sha256(path):
 
 
 def sync_mod_files():
+    if getattr(sys, 'frozen', False):
+        mod_source_dir = Path(sys._MEIPASS) / 'cookie_shimmer_bridge_mod'
+    else:
+        mod_source_dir = MOD_SOURCE_DIR
+
     try:
         MOD_INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     except Exception:
@@ -1613,7 +1642,7 @@ def sync_mod_files():
         return
 
     for filename in MOD_SYNC_FILES:
-        source = MOD_SOURCE_DIR / filename
+        source = mod_source_dir / filename
         dest = MOD_INSTALL_DIR / filename
 
         if not source.exists():

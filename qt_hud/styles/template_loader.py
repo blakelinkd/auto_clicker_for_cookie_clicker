@@ -4,6 +4,7 @@ Template loader for Qt HUD CSS templates.
 Loads .qss template files from the 'qss' directory and substitutes color placeholders.
 """
 import logging
+import sys
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -11,7 +12,10 @@ log = logging.getLogger(__name__)
 # Import theme colors
 from .constants import COLORS, PROGRESSBAR_COLORS, BUTTON_PRIMARY_BG, BUTTON_PRIMARY_HOVER, BUTTON_SECONDARY_BG, BUTTON_SECONDARY_HOVER, BUTTON_TOGGLE_BG, BUTTON_TOGGLE_HOVER, BUTTON_TOGGLE_CHECKED_BG, BUTTON_TOGGLE_CHECKED_TEXT
 
-TEMPLATES_DIR = Path(__file__).parent / "qss"
+if getattr(sys, 'frozen', False):
+    TEMPLATES_DIR = Path(sys._MEIPASS) / "qt_hud" / "styles" / "qss"
+else:
+    TEMPLATES_DIR = Path(__file__).parent / "qss"
 
 # Cache loaded templates
 _template_cache = {}

@@ -36,6 +36,97 @@ log = logging.getLogger(__name__)
 
 from .styles import theme
 
+
+def _auto_detect_game_path() -> Optional[str]:
+    """Attempt to auto-detect Cookie Clicker installation path.
+    
+    Searches common Steam locations for Cookie Clicker.exe.
+    
+    Returns:
+        Path string if found, None otherwise.
+    """
+    import os
+    
+    possible_paths = []
+    
+    steam_common_paths = [
+        os.path.join(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)"), "Steam", "steamapps", "common"),
+        os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"), "Steam", "steamapps", "common"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "..", "Local", "Steam", "steamapps", "common"),
+        "D:\\Steam\\steamapps\\common",
+        "E:\\Steam\\steamapps\\common",
+    ]
+    
+    for base_path in steam_common_paths:
+        if os.path.isdir(base_path):
+            possible_paths.append(base_path)
+            try:
+                for entry in os.listdir(base_path):
+                    if "cookie" in entry.lower() and os.path.isdir(os.path.join(base_path, entry)):
+                        possible_paths.append(os.path.join(base_path, entry))
+            except OSError:
+                pass
+    
+    steam_library_paths = set()
+    steam_dir = os.path.join(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)"), "Steam")
+    if os.path.isdir(steam_dir):
+        steam_cfg = os.path.join(steam_dir, "steamapps", "libraryfolders.vdf")
+        if os.path.isfile(steam_cfg):
+            try:
+                with open(steam_cfg, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line in f:
+                        if '"path"' in line.lower():
+                            parts = line.split('"')
+                            if len(parts) >= 4:
+                                lib_path = parts[3].replace("\\\\", "\\")
+                                lib_common = os.path.join(lib_path, "steamapps", "common")
+                                if os.path.isdir(lib_common):
+                                    steam_library_paths.add(lib_common)
+            except OSError:
+                pass
+    
+    possible_paths.extend(steam_library_paths)
+    
+    exe_name = "Cookie Clicker.exe"
+    for search_path in possible_paths:
+        if not os.path.isdir(search_path):
+            continue
+        try:
+            for entry in os.listdir(search_path):
+                full_path = os.path.join(search_path, entry)
+                if os.path.isfile(os.path.join(full_path, exe_name)):
+                    return full_path
+        except OSError:
+            pass
+    
+    return None
+
+
+def _validate_game_path(path_str: str) -> tuple[bool, str]:
+    """Validate that the given path contains Cookie Clicker.exe.
+    
+    Returns:
+        Tuple of (is_valid, message)
+    """
+    from pathlib import Path
+    
+    if not path_str:
+        return False, "Path is empty"
+    
+    game_dir = Path(path_str)
+    
+    if not game_dir.exists():
+        return False, "Directory does not exist"
+    
+    if not game_dir.is_dir():
+        return False, "Path is not a directory"
+    
+    exe_path = game_dir / "Cookie Clicker.exe"
+    if not exe_path.is_file():
+        return False, f"Cookie Clicker.exe not found in {path_str}"
+    
+    return True, "Valid"
+
 # STYLING ARCHITECTURE NOTE:
 # All styling MUST use the centralized theme system in `qt_hud/styles/theme.py`.
 # DO NOT write inline CSS or hardcode colors in this file.
@@ -500,27 +591,123 @@ class QtDashboard(QMainWindow):
             return
 
         game_dir_str = config.get("game_install_dir")
-        if not game_dir_str:
-            self._show_warning(
-                "Game Path Not Set",
-                "Please configure the Cookie Clicker installation directory in the Settings tab before starting the bot.\n\n"
-                "You need to select the folder where Cookie Clicker is installed (usually inside Steam's 'common' folder)."
-            )
-            self._switch_to_settings_tab()
+        is_valid, _ = _validate_game_path(game_dir_str or "")
+        if not game_dir_str or not is_valid:
+            self._show_game_path_setup_dialog()
             return
 
-        from pathlib import Path
-        game_dir = Path(game_dir_str)
-        exe_path = game_dir / "Cookie Clicker.exe"
-        if not exe_path.is_file():
-            self._show_warning(
-                "Game Executable Not Found",
-                f"The Cookie Clicker executable was not found at:\n{exe_path}\n\n"
-                "Please verify the installation directory in the Settings tab."
-            )
-            self._switch_to_settings_tab()
-            return
+        self.toggle_active()
 
+    def _show_game_path_setup_dialog(self):
+        """Show a dialog for setting up the game path when it's missing/invalid."""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Game Path Setup")
+        dialog.setMinimumWidth(500)
+        dialog_layout = QVBoxLayout(dialog)
+        
+        info_label = QLabel(
+            "The Cookie Clicker installation path is not set or invalid.\n\n"
+            "Please set the path to the folder containing 'Cookie Clicker.exe'."
+        )
+        info_label.setWordWrap(True)
+        dialog_layout.addWidget(info_label)
+        
+        path_label = QLabel("Game Directory:")
+        dialog_layout.addWidget(path_label)
+        
+        path_layout = QHBoxLayout()
+        path_entry = QLineEdit()
+        path_entry.setPlaceholderText("e.g., C:\\Steam\\steamapps\\common\\Cookie Clicker")
+        path_layout.addWidget(path_entry, 1)
+        
+        auto_detect_btn = QPushButton("Auto Detect")
+        auto_detect_btn.setStyleSheet(theme.button_style("secondary"))
+        auto_detect_btn.clicked.connect(lambda: self._auto_detect_and_fill(path_entry, status_label))
+        path_layout.addWidget(auto_detect_btn)
+        
+        browse_btn = QPushButton("Browse")
+        browse_btn.setStyleSheet(theme.button_style("secondary"))
+        browse_btn.clicked.connect(lambda: self._browse_and_fill(path_entry, status_label))
+        path_layout.addWidget(browse_btn)
+        
+        dialog_layout.addLayout(path_layout)
+        
+        status_label = QLabel("")
+        dialog_layout.addWidget(status_label)
+        
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        save_btn = QPushButton("Save & Start Bot")
+        save_btn.setStyleSheet(theme.button_style("primary"))
+        save_btn.clicked.connect(lambda: self._save_path_and_start(path_entry, dialog, status_label))
+        button_layout.addWidget(save_btn)
+        
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(theme.button_style("secondary"))
+        cancel_btn.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_btn)
+        
+        dialog_layout.addLayout(button_layout)
+        
+        dialog.exec()
+
+    def _auto_detect_and_fill(self, path_entry: QLineEdit, status_label: QLabel):
+        """Auto-detect path and fill the entry field."""
+        detected_path = _auto_detect_game_path()
+        if detected_path:
+            path_entry.setText(detected_path)
+            self._validate_and_update_status(detected_path, status_label)
+        else:
+            status_label.setText("⚠️ Could not auto-detect. Please browse manually.")
+            status_label.setStyleSheet(theme.secondary_label_style())
+
+    def _browse_and_fill(self, path_entry: QLineEdit, status_label: QLabel):
+        """Browse for path and fill the entry field."""
+        from PySide6.QtWidgets import QFileDialog
+        current_dir = path_entry.text() or ""
+        dir_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Cookie Clicker Installation Directory",
+            current_dir,
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        if dir_path:
+            path_entry.setText(dir_path)
+            self._validate_and_update_status(dir_path, status_label)
+
+    def _validate_and_update_status(self, path_str: str, status_label: QLabel):
+        """Validate path and update status label."""
+        is_valid, message = _validate_game_path(path_str)
+        if is_valid:
+            status_label.setText(f"✅ {message}")
+        else:
+            status_label.setText(f"⚠️ {message}")
+
+    def _save_path_and_start(self, path_entry: QLineEdit, dialog, status_label: QLabel):
+        """Save the path and start the bot."""
+        path = path_entry.text().strip()
+        if not path:
+            status_label.setText("⚠️ Please enter a path")
+            return
+        
+        is_valid, message = _validate_game_path(path)
+        if not is_valid:
+            status_label.setText(f"⚠️ Invalid: {message}")
+            return
+        
+        if self.save_config and self.get_config:
+            try:
+                config = self.get_config() or {}
+                config["game_install_dir"] = path
+                self.save_config(config)
+            except Exception as e:
+                status_label.setText(f"⚠️ Error saving: {e}")
+                return
+        
+        dialog.accept()
         self.toggle_active()
 
     def _show_warning(self, title, message):
@@ -970,12 +1157,22 @@ class QtDashboard(QMainWindow):
         self.game_path_entry.setStyleSheet(theme.line_edit_style())
         path_layout.addWidget(self.game_path_entry, 1)
 
+        self.auto_detect_btn = QPushButton("Auto Detect")
+        self.auto_detect_btn.setStyleSheet(theme.button_style("secondary"))
+        self.auto_detect_btn.clicked.connect(self._auto_detect_game_path_action)
+        path_layout.addWidget(self.auto_detect_btn)
+
         self.browse_btn = QPushButton("Browse")
         self.browse_btn.setStyleSheet(theme.button_style("secondary"))
         self.browse_btn.clicked.connect(self._browse_game_directory)
         path_layout.addWidget(self.browse_btn)
 
         panel_layout.addLayout(path_layout)
+
+        # Path validation status
+        self.game_path_status_label = QLabel("")
+        self.game_path_status_label.setStyleSheet(theme.secondary_label_style())
+        panel_layout.addWidget(self.game_path_status_label)
 
         # Auto-launch and hotkeys checkboxes
         panel_layout.addSpacing(15)
@@ -1788,7 +1985,10 @@ class QtDashboard(QMainWindow):
         if self.get_config:
             try:
                 config = self.get_config()
-                self.game_path_entry.setText(config.get("game_install_dir", ""))
+                path = config.get("game_install_dir", "")
+                self.game_path_entry.setText(path)
+                if path:
+                    self._validate_and_update_path_status(path)
             except Exception:
                 pass
 
@@ -1796,11 +1996,21 @@ class QtDashboard(QMainWindow):
         """Save configuration."""
         if not self.save_config:
             return
+        path = self.game_path_entry.text().strip()
+        if path:
+            is_valid, message = _validate_game_path(path)
+            if not is_valid:
+                self._show_warning(
+                    "Invalid Game Path",
+                    f"The path appears to be invalid: {message}\n\nPlease correct the path before saving."
+                )
+                return
+        
         try:
             config = {}
             if self.get_config:
                 config = self.get_config() or {}
-            config["game_install_dir"] = self.game_path_entry.text()
+            config["game_install_dir"] = path
             self.save_config(config)
             self.config_status_label.setText("✅ Configuration saved!")
         except Exception as e:
@@ -1818,6 +2028,29 @@ class QtDashboard(QMainWindow):
         )
         if dir_path:
             self.game_path_entry.setText(dir_path)
+            self._validate_and_update_path_status(dir_path)
+
+    def _auto_detect_game_path_action(self):
+        """Attempt to auto-detect game path and update the entry field."""
+        detected_path = _auto_detect_game_path()
+        if detected_path:
+            self.game_path_entry.setText(detected_path)
+            self._validate_and_update_path_status(detected_path)
+            self.config_status_label.setText(f"✅ Auto-detected: {detected_path}")
+        else:
+            self._show_warning(
+                "Game Not Found",
+                "Could not auto-detect Cookie Clicker installation.\n\n"
+                "Please browse manually to the folder containing 'Cookie Clicker.exe'."
+            )
+
+    def _validate_and_update_path_status(self, path_str: str):
+        """Validate the path and update the status label."""
+        is_valid, message = _validate_game_path(path_str)
+        if is_valid:
+            self.game_path_status_label.setText(f"✅ {message}")
+        else:
+            self.game_path_status_label.setText(f"⚠️ {message}")
 
     def _apply_building_cap(self, building_name, input_widget):
         """Apply building cap from input field."""

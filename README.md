@@ -14,7 +14,17 @@
 **Advanced automation bot for the Steam version of Cookie Clicker.**  
 Automate clicking, golden cookies, stock market, buildings, garden, spells, and more—while you sleep!
 
-## 🚀 Quick Start
+## 📥 Download
+
+### Latest Release
+Download the Windows installer from the [Releases](https://github.com/blakelinkd/auto_clicker_for_cookie_clicker/releases) page.
+
+### Installation
+1. Download `CookieClickerAutoClicker_Setup.exe` from the releases page
+2. Run the installer
+3. Launch "Cookie Clicker Auto-Clicker" from your Start Menu or Desktop shortcut
+
+## 🚀 Quick Start (Development)
 
 1. **Install dependencies**  
    ```bash

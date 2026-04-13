@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 
@@ -10,11 +10,15 @@ project_root = Path(SPECPATH)
 cookie_mod_src = project_root / 'cookie_shimmer_bridge_mod'
 qt_hud_src = project_root / 'qt_hud'
 
-# Collect all keyboard module files and data
-keyboard_datas, keyboard_binaries, keyboard_hiddenimports = collect_all('keyboard')
+# Get keyboard module path from site-packages
+import keyboard
+keyboard_path = Path(keyboard.__file__).parent
+keyboard_datas = [(str(keyboard_path), 'keyboard')]
 
-# Collect pyautogui and its dependencies
-pyautogui_datas, pyautogui_binaries, pyautogui_hiddenimports = collect_all('pyautogui')
+# Get pyautogui module path from site-packages
+import pyautogui
+pyautogui_path = Path(pyautogui.__file__).parent
+pyautogui_datas = [(str(pyautogui_path), 'pyautogui')]
 
 # Get all keyboard submodules explicitly
 keyboard_submodules = collect_submodules('keyboard')
@@ -22,7 +26,7 @@ keyboard_submodules = collect_submodules('keyboard')
 a = Analysis(
     ['main.py'],
     pathex=[str(project_root)],
-    binaries=keyboard_binaries + pyautogui_binaries,
+    binaries=[],
     datas=[
         (str(cookie_mod_src), 'cookie_shimmer_bridge_mod'),
         (str(qt_hud_src), 'qt_hud'),
@@ -56,7 +60,7 @@ a = Analysis(
         'PySide6.QtCore',
         'PySide6.QtGui',
         'PySide6.QtWidgets',
-    ] + keyboard_hiddenimports + keyboard_submodules + pyautogui_hiddenimports,
+    ] + keyboard_submodules,
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
@@ -90,6 +94,10 @@ exe = EXE(
 
 coll = COLLECT(
     exe,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
     strip=False,
     upx=True,
     upx_exclude=[],

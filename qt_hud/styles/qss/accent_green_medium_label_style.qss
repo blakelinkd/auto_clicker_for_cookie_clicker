@@ -1,0 +1,12 @@
+def accent_green_medium_label_style(colors=COLORS, margin_top=None):
+    """Return CSS style for medium-sized label with accent green.
+    
+    Args:
+        colors: Color dictionary.
+        margin_top: Optional top margin in pixels.
+    """
+    style = f"color: {colors['accent_green']}; font-size: 14px;"
+    if margin_top is not None:
+        style += f" margin-top: {margin_top}px;"
+    return style
+

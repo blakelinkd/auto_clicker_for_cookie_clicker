@@ -1,7 +1,8 @@
 import logging
 import time
 import tkinter as tk
-from tkinter import scrolledtext, ttk
+from tkinter import scrolledtext, ttk, filedialog, messagebox
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -110,6 +111,8 @@ class BotDashboard:
         cycle_wrinkler_mode,
         exit_program,
         dump_shimmer_data=None,
+        get_config=None,
+        save_config=None,
         initial_geometry=None,
         refresh_interval_ms=500,
     ):
@@ -129,6 +132,8 @@ class BotDashboard:
         self.cycle_wrinkler_mode = cycle_wrinkler_mode
         self.exit_program = exit_program
         self.dump_shimmer_data = dump_shimmer_data
+        self.get_config = get_config
+        self.save_config = save_config
         self.initial_geometry = initial_geometry
         self.refresh_interval_ms = int(refresh_interval_ms)
         self.building_cap_rows = {}
@@ -314,6 +319,7 @@ class BotDashboard:
         forecasts_tab, forecasts = self._create_scrollable_tab(notebook)
         feed_tab, feed = self._create_scrollable_tab(notebook)
         diagnostics_tab, diagnostics = self._create_scrollable_tab(notebook)
+        settings_tab, settings = self._create_scrollable_tab(notebook)
         gameplay.grid_columnconfigure(0, weight=3)
         gameplay.grid_columnconfigure(1, weight=2)
         gameplay.grid_rowconfigure(0, weight=1, minsize=320)
@@ -325,11 +331,14 @@ class BotDashboard:
         feed.grid_rowconfigure(0, weight=1)
         diagnostics.grid_columnconfigure(0, weight=1)
         diagnostics.grid_rowconfigure(0, weight=1)
+        settings.grid_columnconfigure(0, weight=1)
+        settings.grid_rowconfigure(0, weight=1)
 
         notebook.add(gameplay_tab, text="Gameplay")
         notebook.add(forecasts_tab, text="Forecasts")
         notebook.add(feed_tab, text="Feed")
         notebook.add(diagnostics_tab, text="Diagnostics")
+        notebook.add(settings_tab, text="Settings")
 
         self._build_purchase_panel(gameplay)
         self._build_status_panel(gameplay)
@@ -338,6 +347,8 @@ class BotDashboard:
         self._build_golden_cookie_panel(forecasts, row=1, column=0, pady=(8, 0))
         self._build_feed_panel(feed)
         self._build_diagnostics_panel(diagnostics)
+        self._build_settings_panel(settings)
+        self._setup_bot_button_validation()
 
     def _build_purchase_panel(self, parent):
         frame = ttk.LabelFrame(parent, text="Purchase Progress", style="Card.TLabelframe", padding=12)
@@ -618,6 +629,161 @@ class BotDashboard:
         container.grid_rowconfigure(0, weight=0)
         self._build_shimmer_rng_panel(container)
         self._build_building_caps_panel(container)
+
+    def _build_settings_panel(self, parent):
+        if self.get_config is None or self.save_config is None:
+            label = ttk.Label(parent, text="Settings API not available (older version)", style="Muted.TLabel")
+            label.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+            return
+
+        frame = ttk.LabelFrame(parent, text="Configuration", style="Card.TLabelframe", padding=12)
+        frame.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+        frame.grid_columnconfigure(1, weight=1)
+
+        # Game install directory
+        ttk.Label(frame, text="Game install directory", style="Muted.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 4)
+        )
+        self.game_dir_var = tk.StringVar()
+        game_dir_entry = ttk.Entry(frame, textvariable=self.game_dir_var, width=50)
+        game_dir_entry.grid(row=0, column=1, sticky="ew", padx=(8, 4), pady=(0, 4))
+        ttk.Button(frame, text="Browse...", command=self._browse_game_dir).grid(
+            row=0, column=2, sticky="w", padx=(4, 0), pady=(0, 4)
+        )
+
+        # Auto-launch game checkbox
+        self.auto_launch_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            frame,
+            text="Auto-launch game on startup",
+            variable=self.auto_launch_var,
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
+        # Register hotkeys checkbox
+        self.register_hotkeys_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            frame,
+            text="Register global hotkeys (Ctrl+Alt+Fxx)",
+            variable=self.register_hotkeys_var,
+            style="Muted.TLabel",
+        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
+
+        # Save button
+        ttk.Button(frame, text="Save Configuration", command=self._save_settings).grid(
+            row=3, column=0, columnspan=3, sticky="w", pady=(12, 0)
+        )
+
+        # Status label
+        self.settings_status_var = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=self.settings_status_var, style="Muted.TLabel").grid(
+            row=4, column=0, columnspan=3, sticky="w", pady=(4, 0)
+        )
+
+        # Load current config
+        self._load_settings()
+
+    def _browse_game_dir(self):
+        from pathlib import Path
+        initialdir = None
+        current = self.game_dir_var.get().strip()
+        if current:
+            path = Path(current)
+            if path.is_dir():
+                initialdir = str(path)
+        directory = filedialog.askdirectory(
+            title="Select Cookie Clicker installation directory",
+            initialdir=initialdir,
+        )
+        if directory:
+            self.game_dir_var.set(directory)
+
+    def _load_settings(self):
+        try:
+            config = self.get_config()
+            self.game_dir_var.set(config.get("game_install_dir") or "")
+            self.auto_launch_var.set(config.get("auto_launch_game", False))
+            self.register_hotkeys_var.set(config.get("register_hotkeys", True))
+            self.settings_status_var.set("Configuration loaded.")
+        except Exception as e:
+            self.settings_status_var.set(f"Failed to load config: {e}")
+
+    def _save_settings(self):
+        try:
+            config_dict = {
+                "game_install_dir": self.game_dir_var.get().strip() or None,
+                "auto_launch_game": self.auto_launch_var.get(),
+                "register_hotkeys": self.register_hotkeys_var.get(),
+            }
+            self.save_config(config_dict)
+            self.settings_status_var.set("Configuration saved.")
+        except Exception as e:
+            self.settings_status_var.set(f"Failed to save config: {e}")
+
+    def _safe_toggle_active(self):
+        # Determine if bot is currently active
+        try:
+            state = self.get_dashboard_state()
+            currently_active = state.get('state', {}).get('active', False)
+        except Exception:
+            currently_active = False
+        
+        # If bot is already running, allow toggle off regardless of path
+        if currently_active:
+            self.toggle_active()
+            return
+        
+        # Bot is off; validate game path before turning on
+        if self.get_config is None:
+            # fallback to old behavior
+            self.toggle_active()
+            return
+        config = self.get_config()
+        game_dir_str = config.get("game_install_dir")
+        if not game_dir_str:
+            # Show warning dialog
+            messagebox.showwarning(
+                "Game Path Not Set",
+                "Please configure the Cookie Clicker installation directory in the Settings tab before starting the bot.\n\n"
+                "You need to select the folder where Cookie Clicker is installed (usually inside Steam's 'common' folder)."
+            )
+            # Switch to Settings tab
+            if hasattr(self, 'notebook'):
+                settings_index = 4  # default fallback
+                for i in range(self.notebook.index('end')):
+                    if self.notebook.tab(i, 'text') == 'Settings':
+                        settings_index = i
+                        break
+                self.notebook.select(settings_index)
+            return
+        # Check if the executable exists
+        game_dir = Path(game_dir_str)
+        exe_path = game_dir / "Cookie Clicker.exe"
+        if not exe_path.is_file():
+            messagebox.showwarning(
+                "Game Executable Not Found",
+                f"The Cookie Clicker executable was not found at:\n{exe_path}\n\n"
+                "Please verify the installation directory in the Settings tab."
+            )
+            if hasattr(self, 'notebook'):
+                settings_index = 4  # default fallback
+                for i in range(self.notebook.index('end')):
+                    if self.notebook.tab(i, 'text') == 'Settings':
+                        settings_index = i
+                        break
+                self.notebook.select(settings_index)
+            return
+        # Path is set and executable exists, proceed with toggle
+        self.toggle_active()
+
+    def _setup_bot_button_validation(self):
+        # Replace the Bot button command with validation wrapper
+        bot_button = self.toggle_buttons.get("active")
+        if bot_button:
+            # Store original command
+            self._original_toggle_active = self.toggle_active
+            # Replace button command
+            bot_button.configure(command=self._safe_toggle_active)
 
     def _build_shimmer_rng_panel(self, parent):
         frame = ttk.LabelFrame(parent, text="Shimmer RNG Data", style="Card.TLabelframe", padding=12)

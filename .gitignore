@@ -22,3 +22,6 @@ venv/
 CLAUDE.md
 HANDOFF.md
 PREDICTOR.md
+
+# Bot configuration
+cookie_bot_config.json

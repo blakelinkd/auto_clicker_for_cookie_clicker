@@ -1,0 +1,42 @@
+QTabWidget::pane {
+            border: 1px solid %border_color%;
+            background-color: %panel_bg%;
+        }
+        QTabWidget::tab-bar {
+            left: 0px;
+        }
+        QTabBar:left, QTabBar:right {
+            width: 150px;
+        }
+        QTabBar::tab {
+            background-color: %panel_bg%;
+            color: %text_light%;
+            border: 1px solid %border_color%;
+            border-bottom-color: %panel_bg%; /* same as pane color */
+            padding: 10px 12px;
+            min-width: 140px;
+            min-height: 30px;
+            text-align: center;
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+        }
+        QTabBar::tab:left, QTabBar::tab:right {
+            transform: none;
+            writing-mode: horizontal-tb;
+            text-align: center;
+            min-width: 140px;
+            min-height: 30px;
+        }
+        QTabBar::tab:selected, QTabBar::tab:hover {
+            background-color: %hover_bg%;
+        }
+        QTabBar::tab:selected {
+            background-color: %info_blue%;
+            color: white;
+            font-weight: bold;
+            border-color: %info_blue%;
+            border-bottom-color: %panel_bg%;
+        }
+        QTabBar::tab:!selected {
+            margin-top: 2px; /* make non-selected tabs look smaller */
+        }

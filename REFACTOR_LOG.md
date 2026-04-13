@@ -552,6 +552,40 @@ Phases **0–31** were documented before tests moved to `tests/` (Phase 32). Old
 - Added **Git workflow and branching** guidance under **Agent handoff** in this file: integration on `master`, short-lived `refactor/<track>-<slug>` branches, **`refactor/core-…`** vs **`refactor/hud-…`** prefixes for parallel epics, and coordination notes for other agents.
 - Linked the same guidance from [`AGENTS.md`](AGENTS.md) under **Commit & Pull Request Guidelines** so contributors who start from repo rules still land on the workflow.
 
+### Phase 35: Bootstrap PySide6 HUD (parallel epic B)
+
+- Added `PySide6` to [`requirements.txt`](requirements.txt) for Qt toolkit dependency.
+- Created [`qt_hud/hud_qt.py`](qt_hud/hud_qt.py) with `QtDashboard` class implementing the same `DashboardCallbacks` contract as `BotDashboard` but using PySide6 widgets and timers.
+- Created [`qt_hud/run_qt_hud.py`](qt_hud/run_qt_hud.py) standalone script to launch the Qt HUD with dummy callbacks, enabling parallel development without integrating into the bot runtime.
+- Extended [`clicker_bot/dashboard.py`](clicker_bot/dashboard.py) with optional `build_qt_dashboard()` factory that returns the Qt dashboard when PySide6 is available; existing `build_dashboard()` unchanged.
+- The Qt HUD currently displays bot state, toggle buttons, recent events, and updates on a configurable interval.
+- No changes to `hud_gui.py`; the existing Tkinter HUD remains the default.
+
+### Phase 36: Configuration system and Settings tab
+
+- Added `AppConfig` dataclass in [`clicker_bot/config.py`](clicker_bot/config.py) with fields `game_install_dir`, `auto_launch_game`, `register_hotkeys`.
+- Created [`clicker_bot/config_manager.py`](clicker_bot/config_manager.py) with JSON load/save functions, storing config in `cookie_bot_config.json` (`.gitignore`-d).
+- Extended `BotApplication` to load config at startup, apply it (update legacy module’s path constants), and conditionally auto‑launch the game only when `auto_launch_game` is `True`.
+- Added `update_paths_from_install_dir()`, `get_config()`, and `save_config()` to `clicker.py` to bridge the config system with the legacy module.
+- Added a **Settings tab** to the Tkinter HUD (`_build_settings_panel()` in `hud_gui.py`) with directory picker, checkboxes for auto‑launch and hotkeys, and a save button.
+- Modified `toggle()` and added `_safe_toggle_active()` to validate the configured game path before turning the bot ON; shows a warning dialog and switches to the Settings tab if the path is missing or invalid.
+- The bot now **does not auto‑launch the game on startup by default**; users must set their Cookie Clicker installation directory in the Settings tab before starting the bot.
+- All existing tests pass; added unit tests for `config_manager`.
+
+### Phase 37: Qt HUD module organization
+
+- Moved Qt HUD implementation files into a dedicated `qt_hud/` directory for cleaner project layout:
+  - `hud_qt.py` → `qt_hud/hud_qt.py`
+  - `run_qt_hud.py` → `qt_hud/run_qt_hud.py`
+  - `mock_dashboard_data.json` → `qt_hud/mock_dashboard_data.json`
+- Updated import paths in `clicker_bot/dashboard.py`, `test_hud.py`, and internal module references.
+- Added `pytest-qt` to `requirements.txt` for end-to-end GUI testing.
+- Created `tests/test_qt_hud.py` with three pytest-qt tests covering dashboard creation, toggle buttons, and refresh functionality.
+- Added `conftest.py` in `tests/` to handle Qt availability checking and custom pytest markers.
+- Updated `pytest.ini` with `qt` and `e2e` markers for better test selection.
+- All existing tests pass; Qt HUD tests run successfully with `pytest-qt`.
+- The full test suite now passes 231 tests (up from 223).
+
 ## Current State
 
 - `main.py` is the intended entrypoint.
@@ -569,6 +603,7 @@ Phases **0–31** were documented before tests moved to `tests/` (Phase 32). Old
 - Startup timing and launch gating now also live under `clicker_bot/startup_policy.py`, reducing another compatibility-only helper slice in `clicker.py`.
 - Pause/garden action gating helpers now also live under `clicker_bot/pause_policy.py`, reducing another pure policy slice in `clicker.py`.
 - The test suite is currently green.
+- **Parallel Qt HUD:** A new PySide6-based dashboard is available in `qt_hud/hud_qt.py` with a standalone launcher `qt_hud/run_qt_hud.py`; not yet integrated into the bot runtime.
 - **Contributor workflow:** use the **Git workflow and branching** section above for all new refactor slices (one topic branch per vertical slice, merge to `master`).
 
 ## Remaining Refactor Plan
@@ -621,8 +656,8 @@ Much of reserve/pause already lives under `clicker_bot`; this item means **finis
 | Step | Deliverable | Notes |
 |------|-------------|--------|
 | B1 | **Contract doc** (short, in this file or `AGENTS.md`) | List every `DashboardCallbacks` field and the shape of `get_dashboard_state()` return value; note refresh interval and threading expectations. |
-| B2 | **Dependency** | Add `PySide6` to [`requirements.txt`](requirements.txt); document larger install footprint vs stdlib Tk. |
-| B3 | **Qt implementation** | New module (e.g. `hud_qt.py` or `clicker_bot/qt_dashboard.py`) constructing the same behavior as current `BotDashboard`; `build_dashboard` returns the Qt window class. |
+| B2 | **Dependency** | Add `PySide6` to [`requirements.txt`](requirements.txt); document larger install footprint vs stdlib Tk. **Completed** (Phase 35). |
+| B3 | **Qt implementation** | New module (e.g. `qt_hud/hud_qt.py` or `clicker_bot/qt_dashboard.py`) constructing the same behavior as current `BotDashboard`; `build_dashboard` returns the Qt window class. **Bootstrap completed** (Phase 35): `qt_hud/hud_qt.py` and standalone launcher exist; integration with `build_dashboard` pending. |
 | B4 | **Lifecycle / threads** | Review [`clicker_bot/lifecycle.py`](clicker_bot/lifecycle.py) and `start_dashboard` in `clicker.py`: Qt **must** be tickled from the GUI thread; DOM/click threads should not call widget APIs directly. |
 | B5 | **Tests** | Update [`tests/test_dashboard_factory.py`](tests/test_dashboard_factory.py) (and related) to mock the new class or use a `QApplication` fixture where needed. |
 
@@ -656,4 +691,4 @@ Much of reserve/pause already lives under `clicker_bot`; this item means **finis
 
 - Date: 2026-04-12
 - Command: `python -m pytest -q`
-- Result: `223 passed` (suite under `tests/`)
+- Result: `231 passed` (suite under `tests/`)

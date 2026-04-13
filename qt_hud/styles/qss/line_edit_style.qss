@@ -1,0 +1,5 @@
+background-color: %bg_dark%;
+        color: %text_light%;
+        border: 1px solid %border_color%;
+        border-radius: 4px;
+        padding: 8px;

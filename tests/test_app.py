@@ -57,7 +57,7 @@ class BotApplicationTests(unittest.TestCase):
             start_dashboard=lambda: calls.append("start_dashboard") or dashboard,
         )
 
-        app = BotApplication(legacy, config=AppConfig(register_hotkeys=True))
+        app = BotApplication(legacy, config=AppConfig(register_hotkeys=True, auto_launch_game=True))
 
         result = app.run()
 

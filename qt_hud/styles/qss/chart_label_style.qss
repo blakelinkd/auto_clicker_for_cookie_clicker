@@ -1,0 +1,7 @@
+color: #aaa;
+        font-style: italic;
+        min-height: %min_height%px;
+        border: 1px dashed %border_color%;
+        border-radius: 4px;
+        padding: 20px;
+        %margin_css%

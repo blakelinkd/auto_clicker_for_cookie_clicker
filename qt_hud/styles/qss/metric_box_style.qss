@@ -1,0 +1,4 @@
+background-color: %panel_bg%;
+        border: 1px solid %border_color%;
+        border-radius: 6px;
+        padding: 15px;

@@ -1,0 +1,82 @@
+import json
+import tempfile
+from pathlib import Path
+
+from clicker_bot.config import AppConfig
+from clicker_bot.config_manager import load_config, save_config
+
+
+def test_save_and_load_default_config():
+    """Save default config, load it back, fields match."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = Path(tmpdir) / "test_config.json"
+        config = AppConfig()
+        save_config(config, config_path)
+        assert config_path.exists()
+        loaded = load_config(config_path)
+        assert loaded.register_hotkeys == True
+        assert loaded.auto_launch_game == False
+        assert loaded.game_install_dir is None
+
+
+def test_save_and_load_custom_config():
+    """Save config with custom values."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = Path(tmpdir) / "test_config.json"
+        install_dir = Path("C:/Some/Path")
+        config = AppConfig(
+            register_hotkeys=False,
+            auto_launch_game=True,
+            game_install_dir=install_dir,
+        )
+        save_config(config, config_path)
+        # Verify JSON content
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        assert data["register_hotkeys"] == False
+        assert data["auto_launch_game"] == True
+        assert data["game_install_dir"] == str(install_dir)
+        # Load back
+        loaded = load_config(config_path)
+        assert loaded.register_hotkeys == False
+        assert loaded.auto_launch_game == True
+        assert loaded.game_install_dir == install_dir
+
+
+def test_load_missing_file_returns_default():
+    """Loading a non-existent config returns defaults."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = Path(tmpdir) / "missing.json"
+        config = load_config(config_path)
+        assert config.register_hotkeys == True
+        assert config.auto_launch_game == False
+        assert config.game_install_dir is None
+
+
+def test_load_corrupted_file_returns_default():
+    """Corrupted JSON falls back to defaults."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = Path(tmpdir) / "corrupt.json"
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write("{ invalid json")
+        config = load_config(config_path)
+        # Should not crash, returns default
+        assert isinstance(config, AppConfig)
+        assert config.register_hotkeys == True
+        assert config.auto_launch_game == False
+        assert config.game_install_dir is None
+
+
+def test_config_without_optional_fields():
+    """Backward compatibility: missing fields use defaults."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = Path(tmpdir) / "old.json"
+        data = {
+            # Only older fields may be present
+        }
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        config = load_config(config_path)
+        assert config.register_hotkeys == True  # default
+        assert config.auto_launch_game == False
+        assert config.game_install_dir is None

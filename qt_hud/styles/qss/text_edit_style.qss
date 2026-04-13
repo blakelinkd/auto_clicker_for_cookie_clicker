@@ -1,0 +1,20 @@
+def text_edit_style(colors=COLORS, min_height=None):
+    """Return CSS style for QTextEdit.
+    
+    Args:
+        colors: Color dictionary.
+        min_height: Optional minimum height in pixels.
+    """
+    style = f"""
+        background-color: {colors['bg_dark']};
+        color: {colors['text_light']};
+        border: 1px solid {colors['border_color']};
+        border-radius: 4px;
+        font-family: 'Consolas', monospace;
+        font-size: 12px;
+        padding: 10px;
+    """
+    if min_height is not None:
+        style += f" min-height: {min_height}px;"
+    return style
+

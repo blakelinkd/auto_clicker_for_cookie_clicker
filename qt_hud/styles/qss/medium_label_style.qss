@@ -1,0 +1,12 @@
+def medium_label_style(colors=COLORS, margin_top=None):
+    """Return CSS style for medium-sized label (14px, text light).
+    
+    Args:
+        colors: Color dictionary.
+        margin_top: Optional top margin in pixels.
+    """
+    style = f"color: {colors['text_light']}; font-size: 14px;"
+    if margin_top is not None:
+        style += f" margin-top: {margin_top}px;"
+    return style
+

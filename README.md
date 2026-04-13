@@ -21,19 +21,30 @@ Automate clicking, golden cookies, stock market, buildings, garden, spells, and 
    pip install -r requirements.txt
    ```
 
-2. **Copy the mod**  
+2. **Run the bot**  
+   ```bash
+   python main.py
+   ```
+   A dashboard window will appear.
+
+3. **Configure the game path**  
+   - Go to the **Settings** tab
+   - Click **Browse...** and select your Cookie Clicker installation directory (usually in `Steam\steamapps\common\Cookie Clicker`)
+   - Optionally adjust other settings (auto‑launch, hotkeys)
+   - Click **Save Configuration**
+
+4. **Copy the mod**  
+   The bot will automatically sync the mod files when you first start it.  
+   *(If you prefer manual copy:)*
    ```bash
    xcopy /E cookie_shimmer_bridge_mod "D:\SteamLibrary\steamapps\common\Cookie Clicker\resources\app\mods\local\shimmerBridge\"
    ```
    *(Adjust the path if your Steam library is elsewhere.)*
 
-3. **Restart Cookie Clicker** (full restart required)
+5. **Restart Cookie Clicker** (full restart required for the mod)
 
-4. **Run the bot**  
-   ```bash
-   python main.py
-   ```
-   Use **Ctrl+Alt+F12** to start/pause, **Ctrl+Alt+F11** to exit.
+6. **Start the bot**  
+   Click the **Bot** button on the dashboard or press **Ctrl+Alt+F12** to begin automation.
 
 ## ✨ Features
 
@@ -85,19 +96,34 @@ pip install -r requirements.txt
 
 *Requirements:* `keyboard`, `pyautogui`, `pywin32`
 
-### 2. Install the In‑Game Mod
-Copy the mod folder into Cookie Clicker’s local mods directory:
+### 2. Configure the Bot
+Run the bot to open the dashboard:
+```bash
+python main.py
+```
+
+In the dashboard:
+1. Go to the **Settings** tab
+2. Click **Browse...** and select your Cookie Clicker installation directory (usually in `Steam\steamapps\common\Cookie Clicker`)
+3. Optionally adjust other settings:
+   - **Auto‑launch game on startup**: When enabled, the bot will launch Cookie Clicker automatically
+   - **Register global hotkeys**: Enable/disable the Ctrl+Alt+Fxx hotkeys
+4. Click **Save Configuration**
+
+The bot will now know where your game is installed.
+
+### 3. Install the In‑Game Mod
+The bot automatically syncs the mod files when you first start it.  
+*(If you prefer manual copy or want to verify the mod is installed:)*
 
 ```bash
-# From the repository root
+# From the repository root (adjust the path if your Steam library is elsewhere)
 xcopy /E cookie_shimmer_bridge_mod "D:\SteamLibrary\steamapps\common\Cookie Clicker\resources\app\mods\local\shimmerBridge\"
 ```
 
 > **Note:** The bot automatically syncs the mod files on startup—if you update the mod in the repository, the changes will be copied to the game folder the next time you run `main.py`.
 
-**Important:** If your Steam library is on a different drive, edit the path constants in `clicker.py` (lines 135‑140) before running the bot.
-
-### 3. Restart Cookie Clicker
+### 4. Restart Cookie Clicker
 A full restart of the game is required—the mod loads only at process start.
 
 ## 🎮 Usage
@@ -107,7 +133,14 @@ A full restart of the game is required—the mod loads only at process start.
 python main.py
 ```
 
-The bot starts **paused**. A HUD window will appear showing status, cookies, CPS, and active buffs.
+A dashboard window will appear with several tabs. If this is your first run:
+
+1. Go to the **Settings** tab and configure your Cookie Clicker installation directory
+2. Save the configuration
+3. Ensure Cookie Clicker is running (or enable "Auto‑launch game on startup")
+4. Click the **Bot** button or press **Ctrl+Alt+F12** to begin automation
+
+The bot starts **paused**. The HUD shows real‑time status, cookies, CPS, and active buffs.
 
 ### Hotkeys
 | Hotkey | Action |
@@ -130,13 +163,27 @@ The bot starts **paused**. A HUD window will appear showing status, cookies, CPS
 
 ## ⚙️ Configuration
 
-The bot uses hard‑coded paths in `clicker.py`. If your Steam installation is not at `D:\SteamLibrary`, update these constants:
+The bot now includes a **Settings tab** in the dashboard where you can configure:
 
-```python
-FEED_PATH = Path(r"D:\SteamLibrary\steamapps\common\Cookie Clicker\resources\app\file_outputs\shimmers.txt")
-GAME_EXE_PATH = Path(r"D:\SteamLibrary\steamapps\common\Cookie Clicker\Cookie Clicker.exe")
-MOD_INSTALL_DIR = Path(r"D:\SteamLibrary\steamapps\common\Cookie Clicker\resources\app\mods\local\shimmerBridge")
+- **Game install directory** – Click **Browse…** to select your Cookie Clicker installation folder (usually inside Steam's `common` folder)
+- **Auto‑launch game on startup** – When enabled, the bot will automatically launch Cookie Clicker on startup
+- **Register global hotkeys** – Enable/disable the Ctrl+Alt+Fxx hotkeys
+
+### Settings File
+Configuration is saved to `cookie_bot_config.json` in the repository root (automatically added to `.gitignore`).
+
+### Manual Configuration (Advanced)
+If you prefer to edit the configuration file directly, it uses the following JSON format:
+
+```json
+{
+  "register_hotkeys": true,
+  "auto_launch_game": false,
+  "game_install_dir": "C:/Path/To/Cookie Clicker"
+}
 ```
+
+The bot validates the game path when you try to start automation and will show a warning if the path is missing or invalid.
 
 ## 🧪 Testing
 
@@ -162,6 +209,8 @@ auto_clicker_for_cookie_clicker/
 │   ├── app.py                   # Application wiring
 │   ├── runtime.py               # Runtime configuration
 │   ├── dom_loop.py              # DOM‑coordinate loop orchestrator
+│   ├── config.py                # AppConfig dataclass
+│   ├── config_manager.py        # JSON load/save for settings
 │   └── …
 ├── building_autobuyer.py        # ROI‑based building purchases
 ├── stock_trader.py              # Stock‑market strategy
@@ -171,6 +220,7 @@ auto_clicker_for_cookie_clicker/
 ├── wrinkler_controller.py       # Wrinkler mode management
 ├── ascension_prep.py            # Ascension preparation
 ├── cookie_shimmer_bridge_mod/   # In‑game mod (JavaScript)
+├── cookie_bot_config.json       # User settings (auto‑generated)
 └── tests/                       # Unit tests (`test_*.py`)
 ```
 

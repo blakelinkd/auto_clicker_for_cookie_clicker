@@ -78,6 +78,9 @@ from wrinkler_controller import (
     WRINKLER_MODE_SEASONAL_FARM,
     WRINKLER_MODE_SHINY_HUNT,
 )
+
+from clicker_bot.config_manager import load_config, save_config
+
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)
 except Exception:
@@ -186,6 +189,48 @@ DRAGON_AURA_NAME_TO_ID = {
     "Dragonflight": 10,
     "Radiant Appetite": 15,
 }
+
+
+def update_paths_from_install_dir(install_dir: Path):
+    """
+    Update module-level path constants based on the game installation directory.
+    Call this before any launch or file access.
+    """
+    global GAME_EXE_PATH, FEED_PATH, MOD_INSTALL_DIR
+    GAME_EXE_PATH = install_dir / "Cookie Clicker.exe"
+    FEED_PATH = install_dir / "resources" / "app" / "file_outputs" / "shimmers.txt"
+    MOD_INSTALL_DIR = install_dir / "resources" / "app" / "mods" / "local" / "shimmerBridge"
+
+
+def get_config():
+    """Return current configuration as dict."""
+    config = load_config()
+    return {
+        "game_install_dir": str(config.game_install_dir) if config.game_install_dir else None,
+        "auto_launch_game": config.auto_launch_game,
+        "register_hotkeys": config.register_hotkeys,
+    }
+
+
+def save_config(config_dict):
+    """Save configuration from dict."""
+    from clicker_bot.config import AppConfig
+    from pathlib import Path
+    game_install_dir = Path(config_dict["game_install_dir"]) if config_dict.get("game_install_dir") else None
+    if game_install_dir is not None:
+        # Convert to absolute path for consistency across working directory changes
+        game_install_dir = game_install_dir.absolute()
+    config = AppConfig(
+        game_install_dir=game_install_dir,
+        auto_launch_game=config_dict.get("auto_launch_game", False),
+        register_hotkeys=config_dict.get("register_hotkeys", True),
+    )
+    # Use the imported save_config from config_manager
+    from clicker_bot.config_manager import save_config as save_config_to_file
+    save_config_to_file(config)
+    # Update paths if game install dir changed
+    if game_install_dir is not None:
+        update_paths_from_install_dir(game_install_dir)
 
 
 class HudBufferHandler(logging.Handler):
@@ -1527,6 +1572,8 @@ def start_dashboard():
         cycle_wrinkler_mode=cycle_wrinkler_mode,
         exit_program=exit_program,
         dump_shimmer_data=_dump_shimmer_seed_history,
+        get_config=get_config,
+        save_config=save_config,
     )
     return build_dashboard(
         callbacks=callbacks,
@@ -3034,6 +3081,33 @@ def _get_dashboard_state_builder():
 
 
 def toggle(e=None, source="hotkey"):
+    # If bot is already active, allow turning off without validation
+    if active:
+        _get_bot_activation().toggle(source=source)
+        return
+    
+    # Bot is off; validate before turning on
+    # If game window is already present, allow toggle regardless of executable path
+    existing_window = get_game_window(log_missing=False)
+    if existing_window is None:
+        # No game window found; check if we have a valid executable path to launch
+        if not GAME_EXE_PATH.exists():
+            log.warning(f"Cannot start bot: game executable not found at {GAME_EXE_PATH}")
+            # Try to show a warning dialog if tkinter is available
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                root = tk._default_root
+                if root is not None:
+                    messagebox.showwarning(
+                        "Game Path Not Set",
+                        "Please configure the Cookie Clicker installation directory in the Settings tab before starting the bot.\n\n"
+                        "You need to select the folder where Cookie Clicker is installed (usually inside Steam's 'common' folder)."
+                    )
+            except Exception:
+                pass
+            return
+    # Proceed with activation toggle
     _get_bot_activation().toggle(source=source)
 
 

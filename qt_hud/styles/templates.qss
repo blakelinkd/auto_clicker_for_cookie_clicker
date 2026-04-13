@@ -1,0 +1,159 @@
+/* Qt HUD CSS Templates */
+/* This file is auto-generated. Edit theme.py and regenerate. */
+
+/* panel_style */
+QGroupBox {{
+            font-weight: bold;
+            border: 1px solid {{'}};
+            border-radius: 8px;
+            margin-top: 10px;
+            padding-top: 10px;
+            color: {{'}};
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            left: 10px;
+            padding: 0 5px 0 5px;
+        }}
+
+/* progressbar_style */
+QProgressBar {{
+            border: 1px solid {{'}};
+            border-radius: 3px;
+            text-align: center;
+            color: {{'}};
+            height: 20px;
+        }}
+        QProgressBar::chunk {{
+            background-color: {{color}};
+            border-radius: 3px;
+        }}
+
+/* button_style */
+QPushButton {{
+                background-color: {{BUTTON_PRIMARY_BG}};
+                border: none;
+                padding: 10px 20px;
+                font-size: 14px;
+                color: #e0e0e0;
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{
+                background-color: {{BUTTON_PRIMARY_HOVER}};
+            }}
+
+/* tab_widget_style */
+QTabWidget::pane {{
+            border: 1px solid {{'}};
+            background-color: {{'}};
+        }}
+        QTabWidget::tab-bar {{
+            left: 25px;
+        }}
+        QTabBar::tab {{
+            background-color: {{'}};
+            color: {{'}};
+            border: 1px solid {{'}};
+            border-bottom-color: {{'}}; /* same as pane color */
+            padding: 8px 12px;
+            min-width: 80px;
+            min-height: 30px;
+            font-size: 15px;
+            margin-left: 20px;
+        }}
+        QTabBar::tab:selected, QTabBar::tab:hover {{
+            background-color: {{'}};
+        }}
+        QTabBar::tab:selected {{
+            background-color: {{'}};
+            color: white;
+            font-weight: bold;
+            border-color: {{'}};
+            border-bottom-color: {{'}};
+        }}
+        QTabBar::tab:!selected {{
+            margin-top: 2px; /* make non-selected tabs look smaller */
+        }}
+
+/* header_style */
+background-color: #202124;
+        border-bottom: 1px solid {{'}};
+
+/* toggle_section_style */
+background-color: #1a1b1f;
+        border-bottom: 1px solid {{'}};
+
+/* toggle_group_style */
+background-color: #23262a;
+        border-radius: 8px;
+        padding: 15px;
+
+/* toggle_group_label_style */
+font-size: 14px;
+        font-weight: bold;
+        color: {{'}};
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+
+/* footer_style */
+background-color: #202124;
+        border-top: 1px solid {{'}};
+
+/* scroll_area_style */
+border: 1px solid {{'}};
+        border-radius: 4px;
+        background-color: {{'}};
+
+/* line_edit_style */
+background-color: {{'}};
+        color: {{'}};
+        border: 1px solid {{'}};
+        border-radius: 4px;
+        padding: 8px;
+
+/* metric_box_style */
+background-color: {{'}};
+        border: 1px solid {{'}};
+        border-radius: 6px;
+        padding: 15px;
+
+/* metric_value_style */
+font-size: 24px;
+        font-weight: bold;
+        color: {{color}};
+        margin-bottom: 5px;
+
+/* table_widget_style */
+QTableWidget {{
+            background-color: {{'}};
+            color: {{'}};
+            border: 1px solid {{'}};
+            gridline-color: {{'}};
+            font-size: 12px;
+        }}
+        QHeaderView::section {{
+            background-color: {{'}};
+            color: {{'}};
+            padding: 8px;
+            border: none;
+            border-right: 1px solid {{'}};
+        }}
+
+/* chart_label_style */
+color: #aaa;
+        font-style: italic;
+        min-height: {{min_height}}px;
+        border: 1px dashed {{'}};
+        border-radius: 4px;
+        padding: 20px;
+        {{margin_css}}
+
+/* hero_label_style */
+font-size: 24px;
+        font-weight: bold;
+        color: {{'}};
+
+/* meta_label_style */
+font-size: 14px;
+        color: {{'}};
+

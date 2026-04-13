@@ -1,0 +1,11 @@
+QProgressBar {
+            border: 1px solid %border_color%;
+            border-radius: 3px;
+            text-align: center;
+            color: %text_light%;
+            height: 20px;
+        }
+        QProgressBar::chunk {
+            background-color: %color%;
+            border-radius: 3px;
+        }

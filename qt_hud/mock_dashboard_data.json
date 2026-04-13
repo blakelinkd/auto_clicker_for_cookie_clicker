@@ -1,0 +1,150 @@
+{
+  "state": {
+    "started_at": 1712880000.0,
+    "active": true,
+    "stock_trading_enabled": true,
+    "lucky_reserve_enabled": true,
+    "building_autobuy_enabled": true,
+    "upgrade_autobuy_enabled": true,
+    "ascension_prep_enabled": false,
+    "garden_automation_enabled": true,
+    "main_cookie_clicking_enabled": true,
+    "shimmer_autoclick_enabled": true,
+    "wrinkler_mode": "auto",
+    "last_feed_age": "0.5s",
+    "main_clicks": 1450000,
+    "shimmer_clicks": 52,
+    "last_spell_cast": "Conjure Baked Goods",
+    "last_trade_action": "Buy LOW",
+    "last_building_action": "Buy Farm",
+    "last_garden_action": "Plant Bakeberry",
+    "last_lump_action": "Harvest",
+    "last_wrinkler_action": "Pop",
+    "last_buffs": ["Frenzy", "Click Frenzy", "Building Special"],
+    "last_ascension": {
+      "legacyMeterPercent": 0.65
+    }
+  },
+  "events": [
+    {"timestamp": 1.0, "message": "Bot started"},
+    {"timestamp": 2.0, "message": "Clicked golden cookie"},
+    {"timestamp": 3.0, "message": "Purchased Farm"},
+    {"timestamp": 4.0, "message": "Stock trade executed: +5%"},
+    {"timestamp": 5.0, "message": "Spell cast: Conjure Baked Goods"},
+    {"timestamp": 6.0, "message": "Garden harvested: Bakeberry"}
+  ],
+  "feed": [
+    {"timestamp": 1.5, "message": "Golden cookie spawned", "category": "golden"},
+    {"timestamp": 2.8, "message": "Building purchase: Farm", "category": "building"},
+    {"timestamp": 4.2, "message": "Stock market: Bought LOW", "category": "stock"},
+    {"timestamp": 5.7, "message": "Spell cast successful", "category": "spell"},
+    {"timestamp": 7.1, "message": "Wrinkler popped: +1.2M cookies", "category": "wrinkler"}
+  ],
+  "trade_stats": {
+    "net_pnl": 1250000,
+    "portfolio_value": 5000000,
+    "held_goods": 12,
+    "held_shares": 45
+  },
+  "building_stats": {
+    "last_building": "Farm",
+    "ignored_building_caps": ["Mine"],
+    "total_purchases": 4567,
+    "total_gold_spent": 89000000
+  },
+  "ascension_prep_stats": {
+    "progress": 0.65,
+    "next_milestone": "1 million legacy"
+  },
+  "garden_stats": {
+    "last_garden": "Plant Bakeberry",
+    "status": "Active",
+    "soil": "Woodchips",
+    "next_tick": "45s",
+    "progress": 65
+  },
+  "combo_stats": {
+    "last_combo": "Frenzy + Click Frenzy",
+    "last_gain": 15000000,
+    "status": "Ready",
+    "last_duration": 120
+  },
+  "spell_stats": {
+    "last_spell": "Conjure Baked Goods",
+    "magic": 75,
+    "max_magic": 100
+  },
+  "wrinkler_stats": {
+    "attached": 8,
+    "max": 10,
+    "estimated_reward_attached": 3500000
+  },
+  "shimmer_stats": {
+    "total": 85,
+    "positive": 40,
+    "negative": 30,
+    "neutral": 15,
+    "seeds_captured": 18
+  },
+  "last_building_diag": {
+    "cookies": 1400000,
+    "cookies_ps": 1200000,
+    "candidate": "Mine",
+    "next_candidate_price": 5000000,
+    "reason": "Affordable",
+    "hard_lucky_cookie_reserve": 10000000,
+    "buildings": [
+      {"name": "Mine", "amount": 10000, "cap": 50000, "remaining_to_cap": 40000, "manual_cap": null, "cap_ignored": false},
+      {"name": "Farm", "amount": 5000, "cap": 20000, "remaining_to_cap": 15000, "manual_cap": null, "cap_ignored": false},
+      {"name": "Bank", "amount": 3000, "cap": 10000, "remaining_to_cap": 7000, "manual_cap": null, "cap_ignored": false}
+    ]
+  },
+  "last_upgrade_diag": {
+    "candidate": "Elder Pledge",
+    "candidate_price": 7500000,
+    "reason": "Next cheapest",
+    "hard_lucky_cookie_reserve": 10000000
+  },
+  "last_spell_diag": {
+    "reason": "Mana sufficient",
+    "magic": 75,
+    "max_magic": 100
+  },
+  "last_garden_diag": {
+    "soil": "Woodchips",
+    "progress": 65,
+    "next_tick": "45s"
+  },
+  "last_combo_diag": {
+    "status": "Ready"
+  },
+  "last_wrinkler_diag": {
+    "attached": 8,
+    "max": 10,
+    "estimated_reward_attached": 3500000
+  },
+  "last_bank_diag": {
+    "cookies": 1400000,
+    "cookies_ps_raw_highest": 1200000,
+    "portfolio_exposure_ratio": 0.45,
+    "portfolio_exposure": 2250000,
+    "reason": "Balanced",
+    "hard_lucky_cookie_reserve": 10000000
+  },
+  "last_lump_diag": {
+    "unlocked": true,
+    "lumps": 42,
+    "stage": "ripe",
+    "current_type_name": "normal",
+    "time_to_ripe_seconds": 3600,
+    "modifiers": ["Sugar blessing active"],
+    "age_ms": 7200000
+  },
+  "last_golden_diag": {
+    "available": true,
+    "next_spawn_seconds": 120,
+    "force_spawn_seconds": null,
+    "wrath_cookie": false,
+    "spawn_windows": [{"start": 100, "end": 140}]
+  }
+}

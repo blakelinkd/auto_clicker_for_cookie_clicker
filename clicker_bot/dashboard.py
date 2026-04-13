@@ -1,6 +1,14 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Optional, Any
 
 from hud_gui import BotDashboard
+
+try:
+    from qt_hud.hud_qt import QtDashboard
+    QT_AVAILABLE = True
+except ImportError:
+    QT_AVAILABLE = False
+    QtDashboard = None
 
 
 @dataclass(frozen=True)
@@ -21,6 +29,8 @@ class DashboardCallbacks:
     cycle_wrinkler_mode: object
     exit_program: object
     dump_shimmer_data: object
+    get_config: Optional[Any] = field(default=None)
+    save_config: Optional[Any] = field(default=None)
 
 
 def build_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refresh_interval_ms: int):
@@ -41,6 +51,38 @@ def build_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refresh_
         cycle_wrinkler_mode=callbacks.cycle_wrinkler_mode,
         exit_program=callbacks.exit_program,
         dump_shimmer_data=callbacks.dump_shimmer_data,
+        get_config=callbacks.get_config,
+        save_config=callbacks.save_config,
+        initial_geometry=initial_geometry,
+        refresh_interval_ms=int(refresh_interval_ms),
+    )
+
+
+def build_qt_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refresh_interval_ms: int):
+    """Build a PySide6-based dashboard (requires PySide6 installed)."""
+    if not QT_AVAILABLE:
+        raise RuntimeError(
+            "PySide6 is not available. Install it via 'pip install PySide6'."
+        )
+    return QtDashboard(
+        get_dashboard_state=callbacks.get_dashboard_state,
+        toggle_active=callbacks.toggle_active,
+        toggle_main_autoclick=callbacks.toggle_main_autoclick,
+        toggle_shimmer_autoclick=callbacks.toggle_shimmer_autoclick,
+        toggle_stock_buying=callbacks.toggle_stock_buying,
+        toggle_lucky_reserve=callbacks.toggle_lucky_reserve,
+        toggle_building_buying=callbacks.toggle_building_buying,
+        toggle_upgrade_buying=callbacks.toggle_upgrade_buying,
+        toggle_ascension_prep=callbacks.toggle_ascension_prep,
+        set_upgrade_horizon_seconds=callbacks.set_upgrade_horizon_seconds,
+        set_building_horizon_seconds=callbacks.set_building_horizon_seconds,
+        set_building_cap=callbacks.set_building_cap,
+        set_building_cap_ignored=callbacks.set_building_cap_ignored,
+        cycle_wrinkler_mode=callbacks.cycle_wrinkler_mode,
+        exit_program=callbacks.exit_program,
+        dump_shimmer_data=callbacks.dump_shimmer_data,
+        get_config=callbacks.get_config,
+        save_config=callbacks.save_config,
         initial_geometry=initial_geometry,
         refresh_interval_ms=int(refresh_interval_ms),
     )

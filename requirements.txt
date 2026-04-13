@@ -1,3 +1,5 @@
 keyboard
 pyautogui
 pywin32
+PySide6
+pytest-qt

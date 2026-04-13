@@ -1,8 +1,10 @@
 from dataclasses import dataclass
+from pathlib import Path
 from types import ModuleType
 from typing import Callable
 
 from .config import AppConfig
+from .config_manager import load_config, save_config
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,14 @@ class BotApplication:
         self.legacy = legacy_module
         self.config = AppConfig() if config is None else config
         self._hotkeys_registered = False
+
+    def apply_config(self) -> None:
+        """Apply configuration to legacy module (e.g., update paths)."""
+        if self.config.game_install_dir is not None:
+            if hasattr(self.legacy, "update_paths_from_install_dir"):
+                self.legacy.update_paths_from_install_dir(self.config.game_install_dir)
+            else:
+                self.legacy.log.warning("Legacy module missing update_paths_from_install_dir")
 
     def get_hotkey_bindings(self) -> tuple[HotkeyBinding, ...]:
         return (
@@ -39,8 +49,12 @@ class BotApplication:
         self._hotkeys_registered = True
 
     def initialize_runtime(self) -> bool:
+        self.apply_config()
         self.legacy.sync_mod_files()
-        launched_game = self.legacy._launch_game_if_needed()
+        if self.config.auto_launch_game:
+            launched_game = self.legacy._launch_game_if_needed()
+        else:
+            launched_game = False
         self.legacy.game_rect = self.legacy.get_game_window(log_missing=False)
         if not self.legacy.game_rect:
             self.legacy.log.warning("Game window not found at startup - will retry on toggle.")
@@ -64,8 +78,8 @@ class BotApplication:
 
 def build_default_application() -> BotApplication:
     import clicker
-
-    return BotApplication(clicker)
+    config = load_config()
+    return BotApplication(clicker, config)
 
 
 def main() -> None:

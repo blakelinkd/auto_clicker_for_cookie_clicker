@@ -1,0 +1,5 @@
+font-size: 14px;
+        font-weight: bold;
+        color: %info_blue%;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;

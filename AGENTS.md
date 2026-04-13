@@ -42,3 +42,18 @@ For ongoing `clicker.py` / `clicker_bot` migration work, follow the **Git workfl
 ## Architecture Notes
 
 Do not introduce import-time side effects in new modules. Startup wiring belongs in `main.py` and `clicker_bot/app.py`. `clicker_bot/dom_loop.py` is the preferred home for loop orchestration, coordinators, and execution helpers extracted from `clicker.py`. Preserve the working bot while refactoring: prefer adapters, coordinators, and wrappers over rewrites. Update `REFACTOR_LOG.md` when a new refactor phase lands.
+
+## Qt HUD Styling Guidelines
+
+The Qt HUD uses a centralized theme system located in `qt_hud/styles/theme.py`. All styling MUST follow these rules:
+
+1. **NO inline CSS** in `hud_qt.py` - use theme functions instead
+2. **NO hardcoded colors** - use `theme.COLORS` constants
+3. **Single source of truth** - all styles defined in `theme.py`
+4. **Component-based functions** - each UI widget type has dedicated styling
+
+When modifying the HUD:
+- Read `qt_hud/QT_HUD_STYLE_GUIDE.md` for comprehensive guidelines
+- Use `widget.setStyleSheet(theme.function_name())` pattern
+- Add new theme functions for new UI component types
+- Run tests: `python -m pytest -q tests/ -k qt`

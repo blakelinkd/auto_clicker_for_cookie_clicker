@@ -1,0 +1,17 @@
+QPushButton {
+    background-color: %BUTTON_TOGGLE_BG%;
+    border: none;
+    padding: 12px 15px;
+    font-size: 13px;
+    color: %text_light%;
+    border-radius: 6px;
+    text-align: left;
+}
+QPushButton:hover {
+    background-color: %BUTTON_TOGGLE_HOVER%;
+}
+QPushButton:checked {
+    background-color: %BUTTON_TOGGLE_CHECKED_BG%;
+    color: %BUTTON_TOGGLE_CHECKED_TEXT%;
+    font-weight: bold;
+}

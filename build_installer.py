@@ -28,6 +28,59 @@ BUILD_DIR = PROJECT_ROOT / "build"
 SPEC_FILE = PROJECT_ROOT / "pyinstaller.spec"
 INNO_SETUP_SCRIPT = PROJECT_ROOT / "installer.iss"
 
+INNO_INSTALL_URL = "https://jrsoftware.org/isdl.php"
+
+
+def check_inno_setup():
+    """Check if Inno Setup compiler is available."""
+    inno_paths = [
+        Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"),
+        Path(r"C:\Program Files\Inno Setup 6\ISCC.exe"),
+    ]
+    
+    for path in inno_paths:
+        if path.exists():
+            return path
+    
+    inno_path = shutil.which("iscc")
+    if inno_path:
+        return Path(inno_path)
+    
+    return None
+
+
+def check_dependencies():
+    """Check if required build dependencies are installed."""
+    errors = []
+    
+    # Check PyInstaller
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "PyInstaller", "--version"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        errors.append("PyInstaller is not installed. Run: pip install pyinstaller")
+    
+    # Check Inno Setup
+    iscc_path = check_inno_setup()
+    if not iscc_path:
+        errors.append(
+            f"Inno Setup is not installed.\n"
+            f"  Download: {INNO_INSTALL_URL}\n"
+            f"  After installation, restart your terminal and run this script again."
+        )
+    
+    if errors:
+        print("ERROR: Missing required dependencies:")
+        for err in errors:
+            print(f"  - {err}")
+        return None
+    
+    return iscc_path
+
 
 def clean_build_dirs():
     """Remove old build artifacts."""
@@ -92,15 +145,9 @@ def check_inno_setup():
     return None
 
 
-def run_inno_setup():
+def run_inno_setup(iscc_path):
     """Run Inno Setup compiler to create the installer."""
     print("\n=== Running Inno Setup ===")
-    
-    iscc_path = check_inno_setup()
-    if not iscc_path:
-        print("WARNING: Inno Setup not found. Skipping installer creation.")
-        print("To build the installer, install Inno Setup from https://jrsoftware.org/isdl.php")
-        return False
     
     if not INNO_SETUP_SCRIPT.exists():
         print(f"ERROR: Inno Setup script not found: {INNO_SETUP_SCRIPT}")
@@ -162,13 +209,18 @@ def main():
         print("ERROR: This build script only works on Windows.")
         sys.exit(1)
     
+    # Check dependencies first
+    iscc_path = check_dependencies()
+    if iscc_path is None:
+        sys.exit(1)
+    
     clean_build_dirs()
     
     if not run_pyinstaller():
         print("\nBuild FAILED at PyInstaller stage.")
         sys.exit(1)
     
-    run_inno_setup()
+    run_inno_setup(iscc_path)
     
     verify_build()
     

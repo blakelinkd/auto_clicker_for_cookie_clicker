@@ -7,13 +7,16 @@ This script automates:
 2. Inno Setup compilation to create the Windows installer
 
 Usage:
-    python build_installer.py
+    python build_installer.py              # Build everything
+    python build_installer.py --pyinstaller-only  # Build only the frozen exe
+    python build_installer.py --installer-only    # Build only the installer (requires frozen exe)
 
 Requirements:
     pip install pyinstaller
     Download and install Inno Setup from https://jrsoftware.org/isdl.php
 """
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -201,6 +204,19 @@ def verify_build():
 
 def main():
     """Main build pipeline."""
+    parser = argparse.ArgumentParser(description="Build Cookie Clicker Auto-Clicker installer")
+    parser.add_argument(
+        "--pyinstaller-only",
+        action="store_true",
+        help="Build only the frozen exe (skip Inno Setup)",
+    )
+    parser.add_argument(
+        "--installer-only",
+        action="store_true",
+        help="Build only the installer (requires existing frozen exe)",
+    )
+    args = parser.parse_args()
+    
     print("=" * 60)
     print("Cookie Clicker Auto-Clicker Installer Build")
     print("=" * 60)
@@ -214,13 +230,26 @@ def main():
     if iscc_path is None:
         sys.exit(1)
     
-    clean_build_dirs()
-    
-    if not run_pyinstaller():
-        print("\nBuild FAILED at PyInstaller stage.")
-        sys.exit(1)
-    
-    run_inno_setup(iscc_path)
+    if args.installer_only:
+        # Skip PyInstaller, only run Inno Setup
+        if not (DIST_DIR / "main" / "CookieClickerAutoClicker.exe").exists():
+            print("ERROR: Frozen exe not found. Run full build first.")
+            sys.exit(1)
+        INSTALLER_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        if not run_inno_setup(iscc_path):
+            print("\nBuild FAILED at Inno Setup stage.")
+            sys.exit(1)
+    else:
+        # Full build or PyInstaller-only
+        if not args.pyinstaller_only:
+            clean_build_dirs()
+        
+        if not run_pyinstaller():
+            print("\nBuild FAILED at PyInstaller stage.")
+            sys.exit(1)
+        
+        if not args.pyinstaller_only:
+            run_inno_setup(iscc_path)
     
     verify_build()
     

@@ -61,6 +61,7 @@ Automate clicking, golden cookies, stock market, buildings, garden, spells, and 
 - **Godzamok Combo** – Detects and executes optimal Godzamok sell‑click combos
 
 ### 🛠 **Technical Highlights**
+- **Achievement‑safe** – This bot simulates mouse clicks only. It does not modify save files or trigger any achievement‑disabling mechanisms. Auto‑clickers are a widely accepted part of the Cookie Clicker community.
 - **No computer vision** – Uses a lightweight in‑game mod that exports exact DOM coordinates
 - **Real‑time decision making** – Prioritizes golden cookies, spells, stocks, then buildings
 - **Hotkey‑controlled** – Toggle features on/off with keyboard shortcuts
@@ -239,5 +240,7 @@ Contributions are welcome! Please follow the existing code style (PEP 8, 4‑s
 This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
 
 ---
+
+**Note on achievements:** This bot uses only mouse and keyboard input. It does not alter save files or trigger any achievement‑disabling mechanisms. Auto‑clickers are a standard part of the Cookie Clicker community, and your achievements will remain intact.
 
 **Disclaimer:** This bot is for educational and personal‑use purposes. Use it at your own risk. The developers are not responsible for any account penalties or unintended consequences from automating Cookie Clicker.

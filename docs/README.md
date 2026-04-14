@@ -1,7 +1,4 @@
-# 🍪 Auto Clicker for Cookie Clicker (Steam)
-
-**Repository root:** clone or name this folder `auto_clicker_for_cookie_clicker` (matches the project identity on disk and remotes). If your copy is still named `clicker`, close any program using that folder, then in PowerShell from `Desktop\Repo`:  
-`Rename-Item -LiteralPath .\clicker -NewName auto_clicker_for_cookie_clicker`
+# 🍪 Auto Clicker for Cookie Clicker (Steam Edition)
 
 <div align="center">
 
@@ -71,8 +68,7 @@ Download the Windows installer from the [Releases](https://github.com/blakelinkd
 - **Godzamok Combo** – Detects and executes optimal Godzamok sell‑click combos
 
 ### 🛠 **Technical Highlights**
-- **Achievement‑safe** – This bot simulates mouse clicks only. It does not modify save files or trigger any achievement‑disabling mechanisms. Auto‑clickers are a widely accepted part of the Cookie Clicker community.
-- **No computer vision** – Uses a lightweight in‑game mod that exports exact DOM coordinates
+- **Achievement‑safe** – This bot simulates mouse clicks only. It does not modify save files or trigger any achievement‑disabling mechanisms. Auto‑clickers are a widely accepted part of the Cookie Clicker 
 - **Real‑time decision making** – Prioritizes golden cookies, spells, stocks, then buildings
 - **Hotkey‑controlled** – Toggle features on/off with keyboard shortcuts
 - **Live HUD** – Graphical dashboard showing bot status, cookies, CPS, and active buffs

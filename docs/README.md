@@ -8,6 +8,14 @@
 
 </div>
 
+<div align="center">
+
+## 🎥 **Watch the App in Action Live!**
+[![Twitch](https://img.shields.io/badge/Twitch-9146FF?style=for-the-badge&logo=twitch&logoColor=white)](https://www.twitch.tv/biotachyonic)
+**Live on [Twitch.tv/biotachyonic](https://www.twitch.tv/biotachyonic)** – See real-time automation, strategies, and development!
+
+</div>
+
 **Advanced automation bot for the Steam version of Cookie Clicker.**  
 Automate clicking, golden cookies, stock market, buildings, garden, spells, and more—while you sleep!
 

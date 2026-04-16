@@ -11,8 +11,13 @@
 <div align="center">
 
 ## 🎥 **Watch the App in Action Live!**
-[![Twitch](https://img.shields.io/badge/Twitch-9146FF?style=for-the-badge&logo=twitch&logoColor=white)](https://www.twitch.tv/biotachyonic)
-**Live on [Twitch.tv/biotachyonic](https://www.twitch.tv/biotachyonic)** – See real-time automation, strategies, and development!
+
+<div style="margin: 2.5rem 0 1.5rem; display: flex; align-items: center; justify-content: center; gap: 1rem;">
+  <a href="https://www.twitch.tv/biotachyonic">
+    <img src="https://img.shields.io/badge/Twitch-9146FF?style=for-the-badge&logo=twitch&logoColor=white" alt="Twitch">
+  </a>
+  <strong>Live on <a href="https://www.twitch.tv/biotachyonic">Twitch.tv/biotachyonic</a></strong> – See real-time automation, strategies, and development!
+</div>
 
 </div>
 

@@ -21,6 +21,8 @@
 
 </div>
 
+
+
 **Advanced automation bot for the Steam version of Cookie Clicker.**  
 Automate clicking, golden cookies, stock market, buildings, garden, spells, and more—while you sleep!
 

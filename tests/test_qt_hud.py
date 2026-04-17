@@ -25,6 +25,10 @@ class MockCallbacks(JsonMockCallbacks):
     def cycle_wrinkler_mode(self):
         super().cycle_wrinkler_mode()
         self.last_called.append('cycle_wrinkler_mode')
+    
+    def cycle_garden_mode(self):
+        super().cycle_garden_mode()
+        self.last_called.append('cycle_garden_mode')
 
 
 @pytest.mark.qt
@@ -48,6 +52,7 @@ def test_qt_dashboard_creation(qtbot):
         set_building_cap=callbacks.set_building_cap,
         set_building_cap_ignored=callbacks.set_building_cap_ignored,
         cycle_wrinkler_mode=callbacks.cycle_wrinkler_mode,
+        cycle_garden_mode=callbacks.cycle_garden_mode,
         exit_program=callbacks.exit_program,
         dump_shimmer_data=callbacks.dump_shimmer_data,
         get_config=callbacks.get_config,
@@ -87,6 +92,7 @@ def test_qt_dashboard_toggle_buttons(qtbot):
         set_building_cap=callbacks.set_building_cap,
         set_building_cap_ignored=callbacks.set_building_cap_ignored,
         cycle_wrinkler_mode=callbacks.cycle_wrinkler_mode,
+        cycle_garden_mode=callbacks.cycle_garden_mode,
         exit_program=callbacks.exit_program,
         dump_shimmer_data=callbacks.dump_shimmer_data,
         get_config=callbacks.get_config,
@@ -129,12 +135,14 @@ def test_qt_dashboard_refresh(qtbot):
         set_building_cap=callbacks.set_building_cap,
         set_building_cap_ignored=callbacks.set_building_cap_ignored,
         cycle_wrinkler_mode=callbacks.cycle_wrinkler_mode,
+        cycle_garden_mode=callbacks.cycle_garden_mode,
+        cycle_garden_mode=callbacks.cycle_garden_mode,
         exit_program=callbacks.exit_program,
         dump_shimmer_data=callbacks.dump_shimmer_data,
         get_config=callbacks.get_config,
         save_config=callbacks.save_config,
-        initial_geometry="800x600",
-        refresh_interval_ms=100,
+        initial_geometry="800x600+100+100",
+        refresh_interval_ms=500,
     )
     
     qtbot.addWidget(window)
@@ -170,12 +178,14 @@ def _create_test_window(qtbot, refresh_interval_ms=1000):
         set_building_cap=callbacks.set_building_cap,
         set_building_cap_ignored=callbacks.set_building_cap_ignored,
         cycle_wrinkler_mode=callbacks.cycle_wrinkler_mode,
+        cycle_garden_mode=callbacks.cycle_garden_mode,
+        cycle_garden_mode=callbacks.cycle_garden_mode,
         exit_program=callbacks.exit_program,
         dump_shimmer_data=callbacks.dump_shimmer_data,
         get_config=callbacks.get_config,
         save_config=callbacks.save_config,
-        initial_geometry="800x600",
-        refresh_interval_ms=refresh_interval_ms,
+        initial_geometry=None,
+        refresh_interval_ms=500,
     )
     qtbot.addWidget(window)
     return window

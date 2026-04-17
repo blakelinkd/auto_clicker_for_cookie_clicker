@@ -540,7 +540,10 @@
       : snake.heatDirection;
 
     if (!target) {
-      desired = bounceHeatDirection(head, desired);
+      desired = normalizeVector(addVectors(
+        bounceHeatDirection(head, desired),
+        wallEscapeVector(head)
+      ));
     }
 
     snake.heatDirection = desired;
@@ -580,6 +583,24 @@
     return { x: dx / distance, y: dy / distance };
   }
 
+  function addVectors(a, b) {
+    return {
+      x: a.x + b.x,
+      y: a.y + b.y,
+    };
+  }
+
+  function normalizeVector(vector) {
+    const length = Math.sqrt(vector.x * vector.x + vector.y * vector.y);
+    if (length <= 0.001) {
+      return { x: 1, y: 0 };
+    }
+    return {
+      x: vector.x / length,
+      y: vector.y / length,
+    };
+  }
+
   function bounceHeatDirection(head, direction) {
     const margin = snakeHeadDrawSize / 2;
     let next = { x: direction.x, y: direction.y };
@@ -591,6 +612,19 @@
     }
     const length = Math.sqrt(next.x * next.x + next.y * next.y);
     return length > 0.001 ? { x: next.x / length, y: next.y / length } : { x: 1, y: 0 };
+  }
+
+  function wallEscapeVector(head) {
+    const margin = snakeHeadDrawSize / 2;
+    const influence = Math.max(cellSize * 1.25, 1);
+    const left = Math.max(0, influence - (head.x - margin));
+    const right = Math.max(0, influence - ((window.innerWidth - margin) - head.x));
+    const top = Math.max(0, influence - (head.y - margin));
+    const bottom = Math.max(0, influence - ((window.innerHeight - margin) - head.y));
+    return {
+      x: (left - right) / influence,
+      y: (top - bottom) / influence,
+    };
   }
 
   function relaxHeatTail() {

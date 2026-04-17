@@ -28,6 +28,7 @@ class DashboardCallbacks:
     set_building_cap: object
     set_building_cap_ignored: object
     cycle_wrinkler_mode: object
+    cycle_garden_mode: object
     exit_program: object
     dump_shimmer_data: object
     get_config: Optional[Any] = field(default=None)
@@ -98,6 +99,7 @@ def build_qt_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refre
         set_building_cap=callbacks.set_building_cap,
         set_building_cap_ignored=callbacks.set_building_cap_ignored,
         cycle_wrinkler_mode=callbacks.cycle_wrinkler_mode,
+        cycle_garden_mode=callbacks.cycle_garden_mode,
         exit_program=callbacks.exit_program,
         dump_shimmer_data=callbacks.dump_shimmer_data,
         get_config=callbacks.get_config,

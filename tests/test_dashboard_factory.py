@@ -16,11 +16,13 @@ class DashboardFactoryTests(unittest.TestCase):
             toggle_building_buying=lambda: None,
             toggle_upgrade_buying=lambda: None,
             toggle_ascension_prep=lambda: None,
+            toggle_garden_automation=lambda: None,
             set_upgrade_horizon_seconds=lambda value: value,
             set_building_horizon_seconds=lambda value: value,
             set_building_cap=lambda name, cap: (name, cap),
             set_building_cap_ignored=lambda name, ignored: (name, ignored),
             cycle_wrinkler_mode=lambda: None,
+            cycle_garden_mode=lambda: None,
             exit_program=lambda: None,
             dump_shimmer_data=lambda: None,
         )

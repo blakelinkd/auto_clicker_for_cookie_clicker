@@ -45,6 +45,8 @@ class BotControls:
         set_upgrade_horizon_value,
         wrinkler_controller,
         wrinkler_modes,
+        garden_controller=None,
+        persist_settings=None,
     ):
         self.log = log
         self.set_runtime = set_runtime
@@ -75,6 +77,8 @@ class BotControls:
         self.set_upgrade_horizon_value = set_upgrade_horizon_value
         self.wrinkler_controller = wrinkler_controller
         self.wrinkler_modes = tuple(wrinkler_modes)
+        self.garden_controller = garden_controller
+        self.persist_settings = persist_settings or (lambda: None)
 
     def _toggle_flag(self, current_value, set_value, binding: ToggleBinding, *, source: str):
         next_value = not bool(current_value)
@@ -82,6 +86,7 @@ class BotControls:
         self.set_runtime(**{binding.runtime_key: next_value})
         self.record_event(f"{binding.event_label} {binding.on_label if next_value else binding.off_label}")
         self.log_mode_change(binding.feature_name, next_value, source=source)
+        self.persist_settings()
         return next_value
 
     def toggle_main_autoclick(self, *, source="hud_button"):
@@ -216,6 +221,7 @@ class BotControls:
             message = f"Building cap set for {building_name}: {applied_cap}"
         self.record_event(message)
         self.log.info(message)
+        self.persist_settings()
         return True, applied_cap
 
     def set_upgrade_horizon_seconds(self, horizon_seconds):
@@ -234,6 +240,7 @@ class BotControls:
         message = f"Upgrade horizon set to {int(round(horizon_seconds / 60.0))}m"
         self.record_event(message)
         self.log.info(message)
+        self.persist_settings()
         return True, horizon_seconds
 
     def set_building_horizon_seconds(self, horizon_seconds):
@@ -249,6 +256,7 @@ class BotControls:
         message = f"Building horizon set to {int(round(applied / 60.0))}m"
         self.record_event(message)
         self.log.info(message)
+        self.persist_settings()
         return True, applied
 
     def set_building_cap_ignored(self, building_name, ignored):
@@ -263,6 +271,7 @@ class BotControls:
         message = f"Building cap {'ignored' if active else 'enforced'} for {building_name}"
         self.record_event(message)
         self.log.info(message)
+        self.persist_settings()
         return True, active
 
     def cycle_wrinkler_mode(self):
@@ -276,4 +285,16 @@ class BotControls:
         self.set_runtime(wrinkler_mode=next_mode)
         self.record_event(f"Wrinkler mode {next_mode}")
         self.log.info(f"Wrinkler mode {next_mode}")
+        self.persist_settings()
+        return next_mode
+    
+    def cycle_garden_mode(self):
+        if self.garden_controller is None:
+            self.log.warning("Garden controller not available")
+            return None
+        next_mode = self.garden_controller.cycle_mode()
+        self.set_runtime(garden_mode=next_mode.value)
+        self.record_event(f"Garden mode {next_mode.value}")
+        self.log.info(f"Garden mode {next_mode.value}")
+        self.persist_settings()
         return next_mode

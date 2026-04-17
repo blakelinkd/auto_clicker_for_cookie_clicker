@@ -51,6 +51,7 @@ class BotControlsTests(unittest.TestCase):
         runtime_updates = []
         events = []
         mode_changes = []
+        persisted = []
         lifecycle = _LifecycleStub()
         autobuyer = _AutobuyerStub()
         state = {
@@ -101,11 +102,12 @@ class BotControlsTests(unittest.TestCase):
             set_upgrade_horizon_value=setter("upgrade_horizon_seconds"),
             wrinkler_controller=SimpleNamespace(mode="hold"),
             wrinkler_modes=("hold", "seasonal_farm", "shiny_hunt"),
+            persist_settings=lambda: persisted.append(True),
         )
-        return controls, state, runtime_updates, events, mode_changes, lifecycle, autobuyer, log
+        return controls, state, runtime_updates, events, mode_changes, lifecycle, autobuyer, log, persisted
 
     def test_toggle_main_autoclick_updates_runtime_and_starts_click_loop(self):
-        controls, state, runtime_updates, events, mode_changes, lifecycle, _autobuyer, log = self._build_controls()
+        controls, state, runtime_updates, events, mode_changes, lifecycle, _autobuyer, log, persisted = self._build_controls()
 
         enabled = controls.toggle_main_autoclick(source="hud_button")
 
@@ -116,10 +118,11 @@ class BotControlsTests(unittest.TestCase):
         self.assertEqual(mode_changes[-1], ("Main autoclick", True, "hud_button"))
         self.assertEqual(state["click_thread"], "thread")
         self.assertEqual(lifecycle.ensure_calls, 1)
+        self.assertEqual(persisted, [True])
         self.assertTrue(any("Main cookie click loop enabled" in msg for msg in log.infos))
 
     def test_toggle_wrath_cookie_clicking_updates_runtime(self):
-        controls, state, runtime_updates, events, mode_changes, _lifecycle, _autobuyer, _log = self._build_controls()
+        controls, state, runtime_updates, events, mode_changes, _lifecycle, _autobuyer, _log, persisted = self._build_controls()
 
         enabled = controls.toggle_wrath_cookie_clicking(source="hud_button")
 
@@ -128,9 +131,10 @@ class BotControlsTests(unittest.TestCase):
         self.assertEqual(runtime_updates[-1], {"wrath_cookie_clicking_enabled": False})
         self.assertEqual(events[-1], "Wrath cookie clicking OFF")
         self.assertEqual(mode_changes[-1], ("Wrath cookie clicking", False, "hud_button"))
+        self.assertEqual(persisted, [True])
 
     def test_set_upgrade_horizon_validates_and_updates(self):
-        controls, state, runtime_updates, events, _mode_changes, _lifecycle, _autobuyer, _log = self._build_controls()
+        controls, state, runtime_updates, events, _mode_changes, _lifecycle, _autobuyer, _log, persisted = self._build_controls()
 
         ok, value = controls.set_upgrade_horizon_seconds(900)
 
@@ -139,12 +143,14 @@ class BotControlsTests(unittest.TestCase):
         self.assertEqual(state["upgrade_horizon_seconds"], 900.0)
         self.assertEqual(runtime_updates[-1], {"upgrade_horizon_seconds": 900.0})
         self.assertEqual(events[-1], "Upgrade horizon set to 15m")
+        self.assertEqual(persisted, [True])
 
     def test_cycle_wrinkler_mode_updates_runtime(self):
-        controls, _state, runtime_updates, events, _mode_changes, _lifecycle, _autobuyer, _log = self._build_controls()
+        controls, _state, runtime_updates, events, _mode_changes, _lifecycle, _autobuyer, _log, persisted = self._build_controls()
 
         next_mode = controls.cycle_wrinkler_mode()
 
         self.assertEqual(next_mode, "seasonal_farm")
         self.assertEqual(runtime_updates[-1], {"wrinkler_mode": "seasonal_farm"})
         self.assertEqual(events[-1], "Wrinkler mode seasonal_farm")
+        self.assertEqual(persisted, [True])

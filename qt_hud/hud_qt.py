@@ -387,6 +387,7 @@ class QtDashboard(QMainWindow):
         set_building_cap,
         set_building_cap_ignored,
         cycle_wrinkler_mode,
+        cycle_garden_mode,
         exit_program,
         dump_shimmer_data=None,
         get_config=None,
@@ -411,6 +412,7 @@ class QtDashboard(QMainWindow):
         self.set_building_cap = set_building_cap
         self.set_building_cap_ignored = set_building_cap_ignored
         self.cycle_wrinkler_mode = cycle_wrinkler_mode
+        self.cycle_garden_mode = cycle_garden_mode
         self.exit_program = exit_program
         self.dump_shimmer_data = dump_shimmer_data
         self.get_config = get_config
@@ -1501,6 +1503,21 @@ class QtDashboard(QMainWindow):
         self.garden_status_label = QLabel("Status: Automation Active - Ready for Harvest.")
         self.garden_status_label.setStyleSheet(theme.accent_green_medium_label_style(margin_top=15))
         garden_layout.addWidget(self.garden_status_label)
+        
+        # Mode display and cycle button
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(QLabel("Mode:"))
+        self.garden_mode_label = QLabel("Auto")
+        self.garden_mode_label.setStyleSheet(theme.accent_green_color_style())
+        mode_layout.addWidget(self.garden_mode_label)
+        mode_layout.addStretch()
+        
+        self.cycle_garden_mode_btn = QPushButton("Cycle Garden Mode")
+        self.cycle_garden_mode_btn.setStyleSheet(theme.button_style("secondary"))
+        self.cycle_garden_mode_btn.clicked.connect(self.cycle_garden_mode)
+        mode_layout.addWidget(self.cycle_garden_mode_btn)
+        
+        garden_layout.addLayout(mode_layout)
 
         garden_layout.addStretch()
         layout.addWidget(garden_panel)
@@ -2095,6 +2112,18 @@ class QtDashboard(QMainWindow):
             status = garden_stats.get("status") or "Active"
             last_garden = garden_stats.get("last_garden") or "None"
             self.garden_status_label.setText(f"Status: {status} - Last: {last_garden}")
+        
+        # Update mode label
+        if hasattr(self, 'garden_mode_label'):
+            mode = garden_stats.get("mode") or "auto"
+            self.garden_mode_label.setText(mode.capitalize())
+            # Color code based on mode
+            if mode == "off":
+                self.garden_mode_label.setStyleSheet(theme.accent_red_color_style())
+            elif mode == "shimmerlilly":
+                self.garden_mode_label.setStyleSheet(theme.shimmer_yellow_color_style())
+            else:
+                self.garden_mode_label.setStyleSheet(theme.accent_green_color_style())
 
     def _update_settings_tab(self):
         """Update settings tab widgets."""

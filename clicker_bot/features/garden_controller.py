@@ -1,7 +1,14 @@
 from dataclasses import dataclass
 import time
+from enum import Enum
 
 GARDEN_ACTION_COOLDOWN = 0.35
+
+
+class GardenMode(Enum):
+    OFF = "off"
+    AUTO = "auto"
+    SHIMMERLILLY = "shimmerlilly"
 
 RECIPE_PLAN = [
     {"target": "cronerice", "parents": ("bakerWheat", "thumbcorn"), "pattern": "mixed_cross"},
@@ -49,6 +56,7 @@ class GardenController:
         self.action_count = 0
         self.last_garden_summary = None
         self.pending_mutation_deadline = {"signature": None, "deadline_ms": None}
+        self.mode = GardenMode.AUTO
 
     def extract_state(self, snapshot, to_screen_point):
         if not isinstance(snapshot, dict):
@@ -216,6 +224,7 @@ class GardenController:
             "plan_target": None if active_plan is None else active_plan["target"],
             "plan_parents": () if active_plan is None else tuple(active_plan.get("parents", ())),
             "plan_mode": "mutation" if plan is not None else ("buffs" if buff_plan is not None else "idle"),
+            "controller_mode": self.mode.value,
             "planner_state": self._describe_plan_state(state, active_plan),
             "target_present": bool(target_tiles),
             "target_mature": any(tile["is_mature"] for tile in target_tiles),
@@ -347,9 +356,28 @@ class GardenController:
         return {
             "action_count": self.action_count,
             "last_garden": self.last_garden_summary,
+            "mode": self.mode.value,
         }
+    
+    def cycle_mode(self):
+        modes = list(GardenMode)
+        current_index = modes.index(self.mode)
+        next_index = (current_index + 1) % len(modes)
+        self.mode = modes[next_index]
+        self.log.info(f"Garden mode changed to {self.mode.value}")
+        return self.mode
 
     def _choose_plan(self, state):
+        if self.mode == GardenMode.OFF:
+            return None
+        if self.mode == GardenMode.SHIMMERLILLY:
+            unlocked = {seed["key"] for seed in state["seeds"] if seed["unlocked"] and seed["key"]}
+            if "shimmerlily" in unlocked:
+                return None
+            if all(parent in unlocked for parent in ("clover", "gildmillet")):
+                return {"target": "shimmerlily", "parents": ("clover", "gildmillet"), "pattern": "mixed_cross"}
+            return None
+        
         unlocked = {seed["key"] for seed in state["seeds"] if seed["unlocked"] and seed["key"]}
         for item in RECIPE_PLAN:
             if item["target"] in unlocked:
@@ -388,6 +416,19 @@ class GardenController:
         return True
 
     def _choose_buff_plan(self, state):
+        if self.mode == GardenMode.OFF:
+            return None
+        if self.mode == GardenMode.SHIMMERLILLY:
+            unlocked_keys = {seed["key"] for seed in state["seeds"] if seed["unlocked"] and seed["key"]}
+            if "shimmerlily" in unlocked_keys:
+                return {
+                    "target": "shimmerlily",
+                    "parents": (),
+                    "pattern": "fill_all",
+                    "mode": "buffs",
+                }
+            return None
+        
         unlocked_keys = {seed["key"] for seed in state["seeds"] if seed["unlocked"] and seed["key"]}
         candidates = [
             (score, key)
@@ -454,6 +495,14 @@ class GardenController:
 
     def _choose_desired_soil(self, state, plan):
         soils_by_key = {soil["key"]: soil for soil in state["soils"] if soil.get("key")}
+        
+        if self.mode == GardenMode.SHIMMERLILLY:
+            if CLAY_KEY in soils_by_key and soils_by_key[CLAY_KEY]["available"] and soils_by_key[CLAY_KEY]["target"] is not None:
+                return soils_by_key[CLAY_KEY]
+            if FERTILIZER_KEY in soils_by_key and soils_by_key[FERTILIZER_KEY]["available"] and soils_by_key[FERTILIZER_KEY]["target"] is not None:
+                return soils_by_key[FERTILIZER_KEY]
+            return None
+        
         if plan.get("mode") == "buffs":
             if CLAY_KEY in soils_by_key and soils_by_key[CLAY_KEY]["available"] and soils_by_key[CLAY_KEY]["target"] is not None:
                 return soils_by_key[CLAY_KEY]
@@ -497,7 +546,8 @@ class GardenController:
     def _plan_layout_action(self, state, plan, preserve_target=False):
         if plan["pattern"] == "neglect":
             return self._plan_neglect_cleanup(state)
-        desired = self._desired_layout(state, plan["pattern"], plan["parents"])
+        parents = plan["parents"] if plan.get("mode") != "buffs" else (plan["target"],)
+        desired = self._desired_layout(state, plan["pattern"], parents)
         for tile in state["plot"]:
             if not tile["unlocked"] or tile["target"] is None:
                 continue
@@ -565,7 +615,8 @@ class GardenController:
         return None
 
     def _plan_refresh_action(self, state, plan):
-        desired = self._desired_layout(state, plan["pattern"], plan["parents"])
+        parents = plan["parents"] if plan.get("mode") != "buffs" else (plan["target"],)
+        desired = self._desired_layout(state, plan["pattern"], parents)
         for coord, desired_key in desired.items():
             tile = self._tile_by_coord(state, coord[0], coord[1])
             if tile is None or tile["target"] is None:
@@ -585,7 +636,8 @@ class GardenController:
     def _remaining_layout_cost(self, state, plan):
         if plan["pattern"] == "neglect":
             return 0.0
-        desired = self._desired_layout(state, plan["pattern"], plan["parents"])
+        parents = plan["parents"] if plan.get("mode") != "buffs" else (plan["target"],)
+        desired = self._desired_layout(state, plan["pattern"], parents)
         total_cost = 0.0
         missing_any = False
         for coord, desired_key in desired.items():
@@ -605,7 +657,8 @@ class GardenController:
     def _refresh_layout_cost(self, state, plan):
         if plan["pattern"] == "neglect":
             return 0.0
-        desired = self._desired_layout(state, plan["pattern"], plan["parents"])
+        parents = plan["parents"] if plan.get("mode") != "buffs" else (plan["target"],)
+        desired = self._desired_layout(state, plan["pattern"], parents)
         total_cost = 0.0
         for desired_key in desired.values():
             seed = self._seed_by_key(state, desired_key)
@@ -643,7 +696,8 @@ class GardenController:
             return {"deadline_ms": deadline_ms, "expired": True}
         if not self._is_layout_ready(state, plan):
             return {"deadline_ms": None, "expired": False}
-        desired = self._desired_layout(state, plan["pattern"], plan["parents"])
+        parents = plan["parents"] if plan.get("mode") != "buffs" else (plan["target"],)
+        desired = self._desired_layout(state, plan["pattern"], parents)
         for coord in desired:
             tile = self._tile_by_coord(state, coord[0], coord[1])
             if tile is None or tile["plant_key"] is None:

@@ -110,6 +110,13 @@ class JsonMockCallbacks:
         idx = (modes.index(current) + 1) % len(modes) if current in modes else 0
         self.state["wrinkler_mode"] = modes[idx]
         print(f"Cycle wrinkler mode -> {self.state['wrinkler_mode']}")
+    
+    def cycle_garden_mode(self):
+        modes = ["off", "auto", "shimmerlilly"]
+        current = self.state.get("garden_mode", "auto")
+        idx = (modes.index(current) + 1) % len(modes) if current in modes else 0
+        self.state["garden_mode"] = modes[idx]
+        print(f"Cycle garden mode -> {self.state['garden_mode']}")
 
     def exit_program(self):
         print("Exit program requested")

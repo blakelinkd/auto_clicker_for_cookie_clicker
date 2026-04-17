@@ -28,6 +28,14 @@ def test_save_and_load_custom_config():
             register_hotkeys=False,
             auto_launch_game=True,
             game_install_dir=install_dir,
+            main_cookie_clicking_enabled=False,
+            wrath_cookie_clicking_enabled=False,
+            building_autobuy_enabled=True,
+            upgrade_horizon_seconds=900.0,
+            building_horizon_seconds=1200.0,
+            wrinkler_mode="shiny_hunt",
+            building_caps={"Cursor": 123},
+            ignored_building_caps=("Mine",),
         )
         save_config(config, config_path)
         # Verify JSON content
@@ -36,11 +44,22 @@ def test_save_and_load_custom_config():
         assert data["register_hotkeys"] == False
         assert data["auto_launch_game"] == True
         assert data["game_install_dir"] == str(install_dir)
+        assert data["automation"]["main_cookie_clicking_enabled"] == False
+        assert data["automation"]["wrath_cookie_clicking_enabled"] == False
+        assert data["automation"]["building_caps"] == {"Cursor": 123}
         # Load back
         loaded = load_config(config_path)
         assert loaded.register_hotkeys == False
         assert loaded.auto_launch_game == True
         assert loaded.game_install_dir == install_dir
+        assert loaded.main_cookie_clicking_enabled == False
+        assert loaded.wrath_cookie_clicking_enabled == False
+        assert loaded.building_autobuy_enabled == True
+        assert loaded.upgrade_horizon_seconds == 900.0
+        assert loaded.building_horizon_seconds == 1200.0
+        assert loaded.wrinkler_mode == "shiny_hunt"
+        assert loaded.building_caps == {"Cursor": 123}
+        assert loaded.ignored_building_caps == ("Mine",)
 
 
 def test_load_missing_file_returns_default():

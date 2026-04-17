@@ -70,6 +70,7 @@ class DomLoopDiagnostics:
     ascension_prep_diag: dict[str, Any]
     upgrade_diag: dict[str, Any]
     dragon_diag: dict[str, Any]
+    santa_diag: dict[str, Any]
     golden_diag: dict[str, Any]
     spell_diag: dict[str, Any]
     reserve_budget: dict[str, Any]
@@ -2529,6 +2530,12 @@ class DomDiagnosticsBuilder:
             self._to_screen_point,
             pop_goal=purchase_goal,
         )
+        santa_controller = getattr(self, "_santa_controller", None)
+        santa_diag = (
+            santa_controller.get_diagnostics(snapshot, self._to_screen_point)
+            if santa_controller is not None
+            else {}
+        )
         combo_diag = self._combo_get_diagnostics(snapshot, self._to_screen_point)
         trade_stats = self._stock_get_runtime_stats()
         spell_stats = self._spell_get_runtime_stats()
@@ -2561,6 +2568,7 @@ class DomDiagnosticsBuilder:
             ascension_prep_diag=ascension_prep_diag,
             upgrade_diag=upgrade_diag,
             dragon_diag=dragon_diag,
+            santa_diag=santa_diag,
             bank_diag=bank_diag,
             reserve_budget=reserve_budget,
             pause_stock_trading=pause_stock_trading,
@@ -2603,6 +2611,7 @@ class DomDiagnosticsBuilder:
             ascension_prep_diag=ascension_prep_diag,
             upgrade_diag=upgrade_diag,
             dragon_diag=dragon_diag,
+            santa_diag=santa_diag,
             golden_diag=golden_diag,
             spell_diag=spell_diag,
             reserve_budget=reserve_budget,
@@ -2647,6 +2656,7 @@ class DomDiagnosticsBuilder:
             last_building_diag=diagnostics.building_diag,
             last_upgrade_diag=diagnostics.upgrade_diag,
             last_dragon_diag=diagnostics.dragon_diag,
+            last_santa_diag=diagnostics.santa_diag,
             last_ascension_prep_diag=diagnostics.ascension_prep_diag,
             last_ascension=(
                 snapshot.get("ascension")
@@ -2719,6 +2729,7 @@ class DomDiagnosticsBuilder:
         ascension_prep_diag: dict[str, Any],
         upgrade_diag: dict[str, Any],
         dragon_diag: dict[str, Any],
+        santa_diag: dict[str, Any],
         bank_diag: dict[str, Any],
         reserve_budget: dict[str, Any],
         pause_stock_trading: bool,

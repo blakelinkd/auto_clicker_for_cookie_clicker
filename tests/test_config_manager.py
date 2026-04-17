@@ -50,6 +50,7 @@ def test_save_and_load_custom_config():
             upgrade_horizon_seconds=900.0,
             building_horizon_seconds=1200.0,
             wrinkler_mode="shiny_hunt",
+            garden_mode="shimmerlilly",
             building_caps={"Cursor": 123},
             ignored_building_caps=("Mine",),
         )
@@ -74,6 +75,7 @@ def test_save_and_load_custom_config():
         assert loaded.upgrade_horizon_seconds == 900.0
         assert loaded.building_horizon_seconds == 1200.0
         assert loaded.wrinkler_mode == "shiny_hunt"
+        assert loaded.garden_mode == "shimmerlilly"
         assert loaded.building_caps == {"Cursor": 123}
         assert loaded.ignored_building_caps == ("Mine",)
     finally:

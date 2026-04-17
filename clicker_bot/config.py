@@ -20,6 +20,7 @@ class AppConfig:
     upgrade_autobuy_enabled: bool = True
     ascension_prep_enabled: bool = False
     garden_automation_enabled: bool = False
+    garden_mode: str = "auto"
     upgrade_horizon_seconds: float = 30 * 60
     building_horizon_seconds: float = 3 * 60
     wrinkler_mode: str = "hold"

@@ -13,6 +13,7 @@ class BotEventRecorderTests(unittest.TestCase):
                 upgrade_horizon_seconds=1.0,
                 building_horizon_seconds=1.0,
                 wrinkler_mode="hold",
+                garden_mode="auto",
                 stock_trading_enabled=False,
                 lucky_reserve_enabled=False,
                 building_autobuy_enabled=False,

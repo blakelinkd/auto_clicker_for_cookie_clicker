@@ -961,6 +961,7 @@ class BotDashboard:
         garden_stats = payload["garden_stats"]
         combo_stats = payload["combo_stats"]
         spell_stats = payload["spell_stats"]
+        last_santa_diag = state.get("last_santa_diag") or {}
 
         uptime = max(0, int(time.monotonic() - float(state.get("started_at") or time.monotonic())))
         uptime_text = time.strftime("%H:%M:%S", time.gmtime(uptime))
@@ -997,7 +998,12 @@ class BotDashboard:
                 f"Building: {_first_non_empty(state.get('last_building_action'), state.get('last_building_diag', {}).get('candidate'), state.get('last_building_diag', {}).get('reason'))}   "
                 f"Garden: {_first_non_empty(state.get('last_garden_action'), garden_stats.get('last_garden'), state.get('last_garden_diag', {}).get('reason'))}   "
                 f"Wrinkler: {_first_non_empty(state.get('last_wrinkler_action'), state.get('last_wrinkler_diag', {}).get('reason'))}   "
-                f"Lump: {_first_non_empty(state.get('last_lump_action'), state.get('last_lump_diag', {}).get('stage'))}"
+                f"Lump: {_first_non_empty(state.get('last_lump_action'), state.get('last_lump_diag', {}).get('stage'))}   "
+                f"Santa: {_first_non_empty(last_santa_diag.get('reason'))}"
+                f" | open={'Y' if last_santa_diag.get('open') else 'N'}"
+                f" evolve={'Y' if last_santa_diag.get('evolve_target') else 'N'}"
+                f" level={last_santa_diag.get('level', '-')}/{last_santa_diag.get('max_level', '-')}"
+                f" target={last_santa_diag.get('target_level', '-')}"
             )
         )
 

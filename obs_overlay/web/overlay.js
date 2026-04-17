@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-7";
+  const assetVersion = "snake-heat-15";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const sounds = {
@@ -16,12 +16,18 @@
 
   const fingerAnchor = { x: 0.0071, y: 0.1389 };
   const defaultBidenHeight = 320;
-  const snakeHeadDrawSize = 86;
-  const snakeBodyDrawSize = 78;
+  const snakeHeadDrawSize = 64;
+  const snakeBodyDrawSize = 54;
   const cellSize = 68;
+  const segmentCollisionGap = 4;
   const snakeTickMs = 230;
+  const heatCandidateAngles = [0, 35, -35, 70, -70, 110, -110, 145, -145, 180];
+  const enrageSpeedMultiplier = 1.82;
+  const enrageSizeGrowthPerSecond = 1.12;
+  const enrageVisualEaseMs = 3000;
+  const enrageMeterMaxBidens = 15;
   const snake = {
-    mode: "snake",
+    mode: "heat",
     segments: [],
     previousSegments: [],
     heatSegments: [],
@@ -34,6 +40,13 @@
     scanRow: 0,
     scanDirection: 1,
     eatenCount: 0,
+    enrageEatenCount: 0,
+    enraged: false,
+    enrageStart: 0,
+    enrageEndedAt: 0,
+    enrageDuration: 15000,
+    enrageEatenThreshold: 15,
+    heatTargeting: false,
   };
   const combatLog = [];
   let lastDurgularYell = 0;
@@ -129,6 +142,7 @@
     snake.segments = [head];
     snake.previousSegments = [head];
     snake.heatSegments = gridSegmentsToPixels(snake.segments);
+    snake.mode = "heat";
     snake.heatDirection = { x: 1, y: 0 };
     snake.direction = { x: 1, y: 0 };
     snake.grow = 0;
@@ -179,9 +193,18 @@
   function clampHeatSegmentsToViewport() {
     const margin = snakeHeadDrawSize / 2;
     for (const segment of snake.heatSegments) {
-      segment.x = Math.max(margin, Math.min(window.innerWidth - margin, segment.x));
-      segment.y = Math.max(margin, Math.min(window.innerHeight - margin, segment.y));
+      const clamped = clampHeatPointToViewport(segment);
+      segment.x = clamped.x;
+      segment.y = clamped.y;
     }
+  }
+
+  function clampHeatPointToViewport(point) {
+    const margin = snakeHeadDrawSize / 2;
+    return {
+      x: Math.max(margin, Math.min(window.innerWidth - margin, point.x)),
+      y: Math.max(margin, Math.min(window.innerHeight - margin, point.y)),
+    };
   }
 
   function addBidenSpawn(payload) {
@@ -285,6 +308,12 @@
     return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
   }
 
+  function gridPointDistance(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
   function pixelDistance(a, b) {
     const dx = a.x - b.x;
     const dy = a.y - b.y;
@@ -351,23 +380,83 @@
     spawn.beingEaten = true;
     spawn.eatenAt = now;
     snake.eatenCount += 1;
-    playSound(sounds.grandma);
-    if (snake.eatenCount % 3 === 0) {
-      toggleGrandmaMode(now);
+    if (!isEnraged(now)) {
+      snake.enrageEatenCount = Math.min(snake.enrageEatenThreshold, snake.enrageEatenCount + 1);
     }
+    playSound(sounds.grandma);
+    maybeStartEnrage(now);
   }
 
-  function toggleGrandmaMode(now) {
-    if (snake.mode === "snake") {
-      enterHeatSeekingMode(now);
-      addCombatLogLine("grandma", "Heat seeking mode engage!", now);
-      return;
-    }
-    enterSnakeMode(now);
-    addCombatLogLine("grandma", "I'm a snaaake.", now);
+  function isEnraged(now) {
+    return snake.enraged && now < snake.enrageStart + snake.enrageDuration;
+  }
+
+  function maybeStartEnrage(now) {
+    if (isEnraged(now)) return;
+    if (snake.enrageEatenCount < snake.enrageEatenThreshold) return;
+    snake.enraged = true;
+    snake.enrageStart = now;
+    snake.enrageEndedAt = 0;
+    snake.enrageEatenCount = snake.enrageEatenThreshold;
+    addCombatLogLine("grandma", "ENRAGED!", now, "shout");
+  }
+
+  function updateEnrageState(now) {
+    if (!snake.enraged) return;
+    if (now < snake.enrageStart + snake.enrageDuration) return;
+    snake.enraged = false;
+    snake.enrageEndedAt = now;
+    snake.enrageStart = 0;
+    snake.enrageEatenCount = 0;
+    addCombatLogLine("grandma", "Enrage spent.", now);
+  }
+
+  function enrageMovementMultiplier(now) {
+    return isEnraged(now) ? enrageSpeedMultiplier : 1;
+  }
+
+  function effectiveSnakeTickMs(now) {
+    return snakeTickMs / enrageMovementMultiplier(now);
+  }
+
+  function enrageSizeMultiplier(now) {
+    const activeStart = snake.enrageStart > 0 ? snake.enrageStart : snake.enrageEndedAt - snake.enrageDuration;
+    if (activeStart <= 0) return 1;
+    const elapsedSeconds = Math.max(0, (Math.min(now, activeStart + snake.enrageDuration) - activeStart) / 1000);
+    const peak = Math.pow(enrageSizeGrowthPerSecond, elapsedSeconds);
+    if (isEnraged(now)) return peak;
+    const ease = enrageVisualEaseFraction(now);
+    return 1 + (peak - 1) * ease;
+  }
+
+  function enrageVisualEaseFraction(now) {
+    if (isEnraged(now)) return 1;
+    if (!snake.enrageEndedAt) return 0;
+    const elapsed = Math.max(0, now - snake.enrageEndedAt);
+    if (elapsed >= enrageVisualEaseMs) return 0;
+    const t = elapsed / enrageVisualEaseMs;
+    return (1 - Math.min(1, t)) ** 3;
+  }
+
+  function enrageVisualIntensity(now) {
+    if (isEnraged(now)) return 1;
+    return enrageVisualEaseFraction(now);
+  }
+
+  function enrageVisualPulseTime(now) {
+    if (snake.enrageStart > 0) return now - snake.enrageStart;
+    if (snake.enrageEndedAt > 0) return snake.enrageDuration + Math.max(0, now - snake.enrageEndedAt);
+    return 0;
+  }
+
+  function enrageProgressFraction(now) {
+    const threshold = enrageMeterThreshold();
+    if (isEnraged(now)) return 1;
+    return clamp01(snake.enrageEatenCount / threshold);
   }
 
   function enterHeatSeekingMode(now) {
+    if (snake.mode === "heat" && snake.heatSegments.length > 0) return;
     snake.mode = "heat";
     snake.heatSegments = gridSegmentsToPixels(interpolatedSegments(now));
     if (snake.heatSegments.length === 0) {
@@ -375,19 +464,6 @@
     }
     snake.heatDirection = { x: snake.direction.x, y: snake.direction.y };
     snake.lastFrame = now;
-  }
-
-  function enterSnakeMode(now) {
-    snake.mode = "snake";
-    const head = pixelToCell(snake.heatSegments[0] || cellToPixel(snake.segments[0]));
-    const targetLength = Math.max(1, snake.heatSegments.length, snake.segments.length);
-    const direction = dominantGridDirection(snake.heatDirection);
-    snake.segments = buildGridSegments(head, direction, targetLength);
-    snake.previousSegments = cloneSegments(snake.segments);
-    snake.direction = direction;
-    snake.grow = 0;
-    snake.lastTick = now;
-    snake.moveStartedAt = now;
   }
 
   function dominantGridDirection(vector) {
@@ -470,11 +546,9 @@
 
   function advanceSnake(now) {
     if (!config.snakeEnabled) return;
-    if (snake.mode === "heat") {
-      advanceHeatSeeking(now);
-      return;
-    }
-    advanceGridSnake(now);
+    updateEnrageState(now);
+    enterHeatSeekingMode(now);
+    advanceHeatSeeking(now);
   }
 
   function advanceGridSnake(now) {
@@ -483,7 +557,7 @@
     if (!isInBounds(snake.segments[0])) {
       resetSnake();
     }
-    if (now - snake.lastTick < snakeTickMs) return;
+    if (now - snake.lastTick < effectiveSnakeTickMs(now)) return;
     snake.lastTick = now;
 
     const head = snake.segments[0];
@@ -511,10 +585,6 @@
 
     if (snake.grow > 0) {
       snake.grow -= 1;
-      const tail = snake.segments[snake.segments.length - 1];
-      if (tail) {
-        snake.segments.push({ x: tail.x, y: tail.y });
-      }
     } else {
       snake.segments.pop();
     }
@@ -533,8 +603,13 @@
     snake.lastFrame = now;
     const head = snake.heatSegments[0];
     const target = nearestHeatTarget(head);
-    const speed = cellSize / snakeTickMs;
+    if (target && !snake.heatTargeting) {
+      addCombatLogLine("grandma", "Heat seeking mode engage!", now);
+    }
+    snake.heatTargeting = Boolean(target);
+    const speed = (cellSize / snakeTickMs) * enrageMovementMultiplier(now);
     const maxStep = speed * dt;
+    const sizes = segmentSizeMultipliers(snake.heatSegments.length);
     let desired = target
       ? vectorToward(head, bidenCenter(target))
       : snake.heatDirection;
@@ -545,11 +620,22 @@
         wallEscapeVector(head)
       ));
     }
+    desired = normalizeVector(addVectors(desired, heatTailAvoidanceVector(head, desired, maxStep, sizes)));
 
+    const targetPoint = target ? bidenCenter(target) : null;
+    desired = chooseHeatDirection(head, desired, maxStep, sizes, targetPoint);
     snake.heatDirection = desired;
+    const previousHead = { x: head.x, y: head.y };
     head.x += desired.x * maxStep;
     head.y += desired.y * maxStep;
     clampHeatSegmentsToViewport();
+    if (heatHeadCollidesWithTail(head, sizes)) {
+      const sidestep = chooseHeatSidestep(previousHead, desired, maxStep, sizes, targetPoint);
+      head.x = sidestep.x;
+      head.y = sidestep.y;
+      snake.heatDirection = sidestep.direction;
+      clampHeatSegmentsToViewport();
+    }
 
     if (target && pixelDistance(head, bidenCenter(target)) <= cellSize * 0.55) {
       const tail = snake.heatSegments[snake.heatSegments.length - 1] || head;
@@ -627,11 +713,134 @@
     };
   }
 
+  function heatTailAvoidanceVector(head, desired, maxStep, sizes) {
+    const predicted = {
+      x: head.x + desired.x * maxStep,
+      y: head.y + desired.y * maxStep,
+    };
+    const headRadius = segmentCollisionRadius(0, sizes);
+    const avoidanceRange = headRadius + snakeBodyDrawSize * 0.85;
+    let avoid = { x: 0, y: 0 };
+
+    for (let i = 2; i < snake.heatSegments.length; i += 1) {
+      const segment = snake.heatSegments[i];
+      const requiredDistance = segmentCollisionSpacing(0, i, sizes);
+      const dx = predicted.x - segment.x;
+      const dy = predicted.y - segment.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const influence = Math.max(requiredDistance + avoidanceRange, 1);
+      if (distance >= influence) continue;
+
+      const strength = (influence - distance) / influence;
+      const pushX = distance > 0.001 ? dx / distance : -desired.y;
+      const pushY = distance > 0.001 ? dy / distance : desired.x;
+      avoid.x += pushX * strength * 2.2;
+      avoid.y += pushY * strength * 2.2;
+    }
+    return avoid;
+  }
+
+  function heatHeadCollidesWithTail(head, sizes) {
+    for (let i = 2; i < snake.heatSegments.length; i += 1) {
+      if (pixelDistance(head, snake.heatSegments[i]) < segmentCollisionSpacing(0, i, sizes)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function chooseHeatDirection(head, desired, maxStep, sizes, targetPoint) {
+    return chooseHeatMove(head, desired, maxStep, sizes, targetPoint).direction;
+  }
+
+  function chooseHeatSidestep(previousHead, desired, maxStep, sizes, targetPoint) {
+    return chooseHeatMove(previousHead, desired, maxStep, sizes, targetPoint);
+  }
+
+  function chooseHeatMove(origin, desired, maxStep, sizes, targetPoint) {
+    if (maxStep <= 0.001) {
+      return { x: origin.x, y: origin.y, direction: normalizeVector(desired) };
+    }
+
+    const baseDirection = normalizeVector(desired);
+    let best = null;
+    for (const direction of heatCandidateDirections(baseDirection)) {
+      const point = clampHeatPointToViewport({
+        x: origin.x + direction.x * maxStep,
+        y: origin.y + direction.y * maxStep,
+      });
+      const score = scoreHeatMove(origin, point, direction, baseDirection, sizes, targetPoint);
+      const candidate = { x: point.x, y: point.y, direction, score };
+      if (!best || candidate.score > best.score) {
+        best = candidate;
+      }
+    }
+
+    return best || { x: origin.x, y: origin.y, direction: baseDirection };
+  }
+
+  function heatCandidateDirections(baseDirection) {
+    const directions = [];
+    for (const degrees of heatCandidateAngles) {
+      const radians = degrees * Math.PI / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      directions.push(normalizeVector({
+        x: baseDirection.x * cos - baseDirection.y * sin,
+        y: baseDirection.x * sin + baseDirection.y * cos,
+      }));
+    }
+    return directions;
+  }
+
+  function scoreHeatMove(origin, point, direction, baseDirection, sizes, targetPoint) {
+    const clearance = heatTailClearance(point, sizes);
+    const requiredClearance = minHeatTailSpacing(sizes);
+    const collisionPenalty = clearance < requiredClearance ? (requiredClearance - clearance) * 80 : 0;
+    const wallMargin = heatWallMargin(point);
+    const turnPenalty = (1 - Math.max(-1, Math.min(1, direction.x * baseDirection.x + direction.y * baseDirection.y))) * 14;
+    const movement = pixelDistance(origin, point);
+    const targetGain = targetPoint
+      ? pixelDistance(origin, targetPoint) - pixelDistance(point, targetPoint)
+      : 0;
+
+    return clearance * 4 + wallMargin * 0.25 + movement * 2 + targetGain * 3 - turnPenalty - collisionPenalty;
+  }
+
+  function heatTailClearance(point, sizes) {
+    let clearance = Infinity;
+    for (let i = 2; i < snake.heatSegments.length; i += 1) {
+      const distance = pixelDistance(point, snake.heatSegments[i]) - segmentCollisionSpacing(0, i, sizes);
+      clearance = Math.min(clearance, distance);
+    }
+    return Number.isFinite(clearance) ? clearance : minHeatTailSpacing(sizes);
+  }
+
+  function minHeatTailSpacing(sizes) {
+    if (sizes.length < 3) return 0;
+    let spacing = Infinity;
+    for (let i = 2; i < sizes.length; i += 1) {
+      spacing = Math.min(spacing, segmentCollisionSpacing(0, i, sizes));
+    }
+    return Number.isFinite(spacing) ? spacing : 0;
+  }
+
+  function heatWallMargin(point) {
+    const margin = snakeHeadDrawSize / 2;
+    return Math.min(
+      point.x - margin,
+      window.innerWidth - margin - point.x,
+      point.y - margin,
+      window.innerHeight - margin - point.y
+    );
+  }
+
   function relaxHeatTail() {
-    const spacing = cellSize * 0.85;
+    const sizes = segmentSizeMultipliers(snake.heatSegments.length);
     for (let i = 1; i < snake.heatSegments.length; i += 1) {
       const leader = snake.heatSegments[i - 1];
       const follower = snake.heatSegments[i];
+      const spacing = segmentCollisionSpacing(i - 1, i, sizes);
       const dx = follower.x - leader.x;
       const dy = follower.y - leader.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
@@ -640,11 +849,12 @@
         follower.y = leader.y + (dy / distance) * spacing;
       }
     }
+    enforceSegmentCollisionGaps(snake.heatSegments, sizes, 1);
   }
 
   function interpolatedSegments(now) {
     const elapsed = Math.max(0, now - snake.moveStartedAt);
-    const t = Math.min(1, elapsed / snakeTickMs);
+    const t = Math.min(1, elapsed / effectiveSnakeTickMs(now));
     return snake.segments.map((segment, index) => {
       const previous = snake.previousSegments[index]
         || snake.previousSegments[snake.previousSegments.length - 1]
@@ -656,6 +866,40 @@
     });
   }
 
+  function compactVisualSegments(segments, sizes) {
+    if (segments.length < 2) return segments;
+    const compacted = [segments[0]];
+    let pathIndex = 0;
+    let pathStart = segments[0];
+    let pathEnd = segments[1];
+    let pathRemaining = gridPointDistance(pathStart, pathEnd);
+
+    for (let i = 1; i < segments.length; i += 1) {
+      let targetDistance = segmentCollisionSpacing(i - 1, i, sizes) / cellSize;
+      while (targetDistance > pathRemaining && pathIndex < segments.length - 2) {
+        targetDistance -= pathRemaining;
+        pathIndex += 1;
+        pathStart = segments[pathIndex];
+        pathEnd = segments[pathIndex + 1];
+        pathRemaining = gridPointDistance(pathStart, pathEnd);
+      }
+
+      if (pathRemaining <= 0.001) {
+        compacted.push({ x: pathStart.x, y: pathStart.y });
+        continue;
+      }
+
+      const t = Math.min(1, targetDistance / pathRemaining);
+      compacted.push({
+        x: pathStart.x + (pathEnd.x - pathStart.x) * t,
+        y: pathStart.y + (pathEnd.y - pathStart.y) * t,
+      });
+      pathRemaining -= targetDistance;
+      pathStart = compacted[compacted.length - 1];
+    }
+    return compacted;
+  }
+
   function drawSnake(now) {
     if (!config.snakeEnabled) return;
     if (!grandmaHeadSprite.complete || !grandmaHeadSprite.naturalWidth || !grandmaHeadSprite.naturalHeight) return;
@@ -664,71 +908,30 @@
       return;
     }
     
-      const scale = 1;
       const width = gridWidth();
       const height = gridHeight();
       const offsetX = (window.innerWidth - width * cellSize) / 2;
       const offsetY = (window.innerHeight - height * cellSize) / 2;
-      const visualSegments = interpolatedSegments(now);
-
-      // Compute sizes for each segment with 4% shrinkage/grow-back
-      const sizes = [];
-      let multiplier = 1;
-      let direction = -1; // -1 = shrinking, 1 = growing
-      const shrinkFactor = 0.96;
-      const growFactor = 1.04;
-      const minThreshold = 0.4; // start growing when too small (increased from 0.15)
-      const maxThreshold = 1.0; // start shrinking when back to full size
-      
-      for (let i = 0; i < visualSegments.length; i++) {
-        sizes.push(multiplier);
-        // Update multiplier for next segment
-        if (direction === -1) {
-          multiplier *= shrinkFactor;
-          if (multiplier < minThreshold) {
-            direction = 1;
-            multiplier = minThreshold * growFactor; // start growing
-          }
-        } else {
-          multiplier *= growFactor;
-          if (multiplier > maxThreshold) {
-            direction = -1;
-            multiplier = maxThreshold * shrinkFactor; // start shrinking
-          }
-        }
-      }
+      const sizes = segmentSizeMultipliers(snake.segments.length);
+      const visualSegments = compactVisualSegments(interpolatedSegments(now), sizes);
+      enforceSegmentCollisionGaps(visualSegments, sizes, cellSize);
       
       // Draw segments from tail to head (so head draws on top)
       for (let i = visualSegments.length - 1; i >= 0; i -= 1) {
         const segment = visualSegments[i];
         const isHead = i === 0;
-        const prevSegment = i > 0 ? visualSegments[i - 1] : null;
         
         // Base grid position
-        let x = offsetX + segment.x * cellSize;
-        let y = offsetY + segment.y * cellSize;
-        
-        // Add visual offset for trailing effect in hunt mode
-        if (!isHead && prevSegment) {
-          // Calculate direction from this segment to previous one (where snake is moving)
-          const dx = prevSegment.x - segment.x;
-          const dy = prevSegment.y - segment.y;
-          
-          // Offset in the opposite direction of movement to create trailing gap
-          const trailOffset = cellSize * 0.15 * Math.max(0.45, sizes[i]);
-          x += dx * trailOffset;
-          y += dy * trailOffset;
-        }
+        const x = offsetX + segment.x * cellSize;
+        const y = offsetY + segment.y * cellSize;
         
         const baseSize = isHead ? snakeHeadDrawSize : snakeBodyDrawSize;
-        const size = baseSize * scale * sizes[i];
+        const size = baseSize * sizes[i] * enrageSizeMultiplier(now);
         const bob = isHead ? Math.sin(performance.now() / 140) * 2 : 0;
 
         ctx.save();
         ctx.translate(x + cellSize / 2, y + cellSize / 2 + bob);
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
-        ctx.drawImage(grandmaHeadSprite, -size / 2, -size / 2, size, size);
+        drawGrandmaHead(now, size);
         ctx.restore();
       }
   }
@@ -739,44 +942,72 @@
       const segment = snake.heatSegments[i];
       const isHead = i === 0;
       const baseSize = isHead ? snakeHeadDrawSize : snakeBodyDrawSize;
-      const size = baseSize * sizes[i];
+      const size = baseSize * sizes[i] * enrageSizeMultiplier(now);
       const bob = isHead ? Math.sin(now / 140) * 2 : 0;
 
       ctx.save();
       ctx.translate(segment.x, segment.y + bob);
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(grandmaHeadSprite, -size / 2, -size / 2, size, size);
+      drawGrandmaHead(now, size);
       ctx.restore();
     }
+  }
+
+  function drawGrandmaHead(now, size) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(grandmaHeadSprite, -size / 2, -size / 2, size, size);
+    const intensity = enrageVisualIntensity(now);
+    if (intensity <= 0) return;
+
+    const pulse = (Math.sin(enrageVisualPulseTime(now) / 95) + 1) / 2;
+    ctx.globalCompositeOperation = "source-atop";
+    ctx.globalAlpha = (0.34 + pulse * 0.34) * intensity;
+    ctx.fillStyle = pulse > 0.5 ? "rgb(255, 24, 24)" : "rgb(255, 96, 0)";
+    ctx.fillRect(-size / 2, -size / 2, size, size);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
   }
 
   function segmentSizeMultipliers(count) {
     const sizes = [];
     let multiplier = 1;
-    let direction = -1;
     const shrinkFactor = 0.96;
-    const growFactor = 1.04;
-    const minThreshold = 0.4;
-    const maxThreshold = 1.0;
+    const minThreshold = 0.62;
 
     for (let i = 0; i < count; i += 1) {
       sizes.push(multiplier);
-      if (direction === -1) {
-        multiplier *= shrinkFactor;
-        if (multiplier < minThreshold) {
-          direction = 1;
-          multiplier = minThreshold * growFactor;
-        }
-      } else {
-        multiplier *= growFactor;
-        if (multiplier > maxThreshold) {
-          direction = -1;
-          multiplier = maxThreshold * shrinkFactor;
-        }
-      }
+      multiplier = Math.max(minThreshold, multiplier * shrinkFactor);
     }
     return sizes;
+  }
+
+  function segmentCollisionRadius(index, sizes) {
+    const baseSize = index === 0 ? snakeHeadDrawSize : snakeBodyDrawSize;
+    return (baseSize * sizes[index]) / 2;
+  }
+
+  function segmentCollisionSpacing(firstIndex, secondIndex, sizes) {
+    const collisionSpacing = segmentCollisionRadius(firstIndex, sizes)
+      + segmentCollisionRadius(secondIndex, sizes)
+      + segmentCollisionGap;
+    return collisionSpacing;
+  }
+
+  function enforceSegmentCollisionGaps(segments, sizes, coordinateScale) {
+    for (let i = 1; i < segments.length; i += 1) {
+      for (let j = 0; j < i; j += 1) {
+        const requiredDistance = segmentCollisionSpacing(j, i, sizes) / coordinateScale;
+        const dx = segments[i].x - segments[j].x;
+        const dy = segments[i].y - segments[j].y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance >= requiredDistance) continue;
+
+        const pushX = distance > 0.001 ? dx / distance : 1;
+        const pushY = distance > 0.001 ? dy / distance : 0;
+        segments[i].x = segments[j].x + pushX * requiredDistance;
+        segments[i].y = segments[j].y + pushY * requiredDistance;
+      }
+    }
   }
 
   function drawBidens(now) {
@@ -915,6 +1146,90 @@
     ctx.restore();
   }
 
+  function enrageMeterThreshold() {
+    const threshold = Number(snake.enrageEatenThreshold);
+    return Number.isFinite(threshold) && threshold > 0 ? threshold : enrageMeterMaxBidens;
+  }
+
+  function enrageMeterIsEnraged(now) {
+    if (typeof isEnraged === "function") {
+      return isEnraged(now);
+    }
+    if (Number.isFinite(snake.enragedUntil)) {
+      return now < snake.enragedUntil;
+    }
+    if (Number.isFinite(snake.enrageStart) && snake.enrageStart > 0
+      && Number.isFinite(snake.enrageDuration) && snake.enrageDuration > 0) {
+      return now < snake.enrageStart + snake.enrageDuration;
+    }
+    return Boolean(snake.enraged);
+  }
+
+  function enrageMeterEatenCount(now) {
+    const threshold = enrageMeterThreshold();
+    if (enrageMeterIsEnraged(now)) return threshold;
+    const enrageCount = Number(snake.enrageEatenCount);
+    if (Number.isFinite(enrageCount)) return Math.max(0, Math.min(threshold, enrageCount));
+    const eatenCount = Number(snake.eatenCount);
+    if (!Number.isFinite(eatenCount)) return 0;
+    return Math.max(0, Math.min(threshold, eatenCount % threshold));
+  }
+
+  function enrageMeterProgressFraction(now) {
+    if (typeof enrageProgressFraction === "function") {
+      return clamp01(enrageProgressFraction(now));
+    }
+    return clamp01(enrageMeterEatenCount(now) / enrageMeterThreshold());
+  }
+
+  function drawEnrageMeter(now) {
+    if (!config.snakeEnabled) return;
+
+    const threshold = enrageMeterThreshold();
+    const eatenCount = enrageMeterEatenCount(now);
+    const progress = enrageMeterProgressFraction(now);
+    const width = Math.min(460, Math.max(280, window.innerWidth * 0.32));
+    const height = 82;
+    const x = (window.innerWidth - width) / 2;
+    const y = Math.max(12, window.innerHeight * 0.05);
+    const padding = 10;
+    const barHeight = 17;
+    const barX = x + padding;
+    const barY = y + height - padding - barHeight;
+    const barWidth = width - padding * 2;
+    const red = "rgba(235, 35, 35, 0.94)";
+
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.82)";
+    ctx.strokeStyle = red;
+    ctx.lineWidth = 2;
+    ctx.fillRect(x, y, width, height);
+    ctx.strokeRect(x + 1, y + 1, width - 2, height - 2);
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.shadowColor = "rgba(0, 0, 0, 0.95)";
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 1;
+    ctx.fillStyle = red;
+    ctx.font = "700 17px Verdana, Geneva, sans-serif";
+    ctx.fillText("GRAKE ENRAGE METER", x + width / 2, y + 9, width - padding * 2);
+
+    ctx.font = "700 14px Verdana, Geneva, sans-serif";
+    ctx.fillText(`${Math.round(eatenCount)} / ${threshold} BIDENS`, x + width / 2, y + 36, width - padding * 2);
+
+    ctx.shadowColor = "transparent";
+    ctx.fillStyle = "rgba(0, 0, 0, 0.95)";
+    ctx.strokeStyle = red;
+    ctx.lineWidth = 1;
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+    ctx.strokeRect(barX + 0.5, barY + 0.5, barWidth - 1, barHeight - 1);
+    ctx.fillStyle = red;
+    ctx.fillRect(barX + 2, barY + 2, Math.max(0, (barWidth - 4) * progress), barHeight - 4);
+    ctx.restore();
+  }
+
   function layoutCombatLogLines(entries, maxWidth) {
     const lines = [];
     for (const entry of entries) {
@@ -1019,6 +1334,7 @@
     advanceSnake(now);
     drawSnake(now);
     drawBidens(now);
+    drawEnrageMeter(now);
     drawCombatLog(now);
     requestAnimationFrame(draw);
   }

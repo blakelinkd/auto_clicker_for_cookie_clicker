@@ -50,13 +50,13 @@ class GardenAction:
 
 
 class GardenController:
-    def __init__(self, log):
+    def __init__(self, log, mode=None):
         self.log = log
         self.last_action_time = 0.0
         self.action_count = 0
         self.last_garden_summary = None
         self.pending_mutation_deadline = {"signature": None, "deadline_ms": None}
-        self.mode = GardenMode.AUTO
+        self.mode = self._coerce_mode(mode)
 
     def extract_state(self, snapshot, to_screen_point):
         if not isinstance(snapshot, dict):
@@ -358,6 +358,10 @@ class GardenController:
             "last_garden": self.last_garden_summary,
             "mode": self.mode.value,
         }
+
+    def set_mode(self, mode):
+        self.mode = self._coerce_mode(mode)
+        return self.mode
     
     def cycle_mode(self):
         modes = list(GardenMode)
@@ -366,6 +370,17 @@ class GardenController:
         self.mode = modes[next_index]
         self.log.info(f"Garden mode changed to {self.mode.value}")
         return self.mode
+
+    @staticmethod
+    def _coerce_mode(mode):
+        if isinstance(mode, GardenMode):
+            return mode
+        if isinstance(mode, str):
+            try:
+                return GardenMode(mode)
+            except ValueError:
+                return GardenMode.AUTO
+        return GardenMode.AUTO
 
     def _choose_plan(self, state):
         if self.mode == GardenMode.OFF:

@@ -63,11 +63,10 @@ class BotApplicationTests(unittest.TestCase):
 
         self.assertIs(result, dashboard)
         self.assertEqual(len(keyboard.bindings), 8)
-        self.assertIn("sync_mod_files", calls)
-        self.assertIn("launch_game", calls)
+        self.assertLess(calls.index("sync_mod_files"), calls.index("launch_game"))
+        self.assertLess(calls.index("sync_mod_files"), calls.index("start_dashboard"))
         self.assertIn(("get_game_window", False), calls)
         self.assertIn("focus_game_window", calls)
-        self.assertIn("start_dashboard", calls)
         self.assertEqual(dashboard.run_calls, 1)
 
     def test_register_hotkeys_is_idempotent(self):

@@ -102,6 +102,7 @@ class BotControlsTests(unittest.TestCase):
             set_upgrade_horizon_value=setter("upgrade_horizon_seconds"),
             wrinkler_controller=SimpleNamespace(mode="hold"),
             wrinkler_modes=("hold", "seasonal_farm", "shiny_hunt"),
+            garden_controller=SimpleNamespace(cycle_mode=lambda: SimpleNamespace(value="off")),
             persist_settings=lambda: persisted.append(True),
         )
         return controls, state, runtime_updates, events, mode_changes, lifecycle, autobuyer, log, persisted
@@ -153,4 +154,14 @@ class BotControlsTests(unittest.TestCase):
         self.assertEqual(next_mode, "seasonal_farm")
         self.assertEqual(runtime_updates[-1], {"wrinkler_mode": "seasonal_farm"})
         self.assertEqual(events[-1], "Wrinkler mode seasonal_farm")
+        self.assertEqual(persisted, [True])
+
+    def test_cycle_garden_mode_updates_runtime_and_persists(self):
+        controls, _state, runtime_updates, events, _mode_changes, _lifecycle, _autobuyer, _log, persisted = self._build_controls()
+
+        next_mode = controls.cycle_garden_mode()
+
+        self.assertEqual(next_mode.value, "off")
+        self.assertEqual(runtime_updates[-1], {"garden_mode": "off"})
+        self.assertEqual(events[-1], "Garden mode off")
         self.assertEqual(persisted, [True])

@@ -250,6 +250,7 @@ def save_config(config_dict):
         upgrade_autobuy_enabled=current.upgrade_autobuy_enabled,
         ascension_prep_enabled=current.ascension_prep_enabled,
         garden_automation_enabled=current.garden_automation_enabled,
+        garden_mode=current.garden_mode,
         upgrade_horizon_seconds=current.upgrade_horizon_seconds,
         building_horizon_seconds=current.building_horizon_seconds,
         wrinkler_mode=current.wrinkler_mode,
@@ -390,7 +391,7 @@ ascension_prep = AscensionPrepController(log)
 godzamok_combo = GodzamokComboEngine(log, MAIN_CLICK_INTERVAL)
 spell_autocaster = SpellAutocaster(log)
 wrinkler_controller = WrinklerController(log, mode=APP_CONFIG.wrinkler_mode)
-garden_controller = GardenController(log)
+garden_controller = GardenController(log, mode=APP_CONFIG.garden_mode)
 santa_controller = SantaController(log)
 overlay_event_emitter = OverlayEventEmitter(
     enabled=os.environ.get("COOKIE_BIDEN_OVERLAY_DISABLED") != "1",
@@ -427,6 +428,7 @@ runtime_store = RuntimeStore(
         upgrade_horizon_seconds=APP_CONFIG.upgrade_horizon_seconds,
         building_horizon_seconds=building_autobuyer.payback_horizon_seconds,
         wrinkler_mode=APP_CONFIG.wrinkler_mode,
+        garden_mode=garden_controller.mode.value,
         stock_trading_enabled=stock_trading_enabled,
         lucky_reserve_enabled=lucky_reserve_enabled,
         building_autobuy_enabled=building_autobuy_enabled,
@@ -480,6 +482,7 @@ def _persist_hud_settings():
         upgrade_autobuy_enabled=upgrade_autobuy_enabled,
         ascension_prep_enabled=ascension_prep_enabled,
         garden_automation_enabled=garden_automation_enabled,
+        garden_mode=garden_controller.mode.value,
         upgrade_horizon_seconds=UPGRADE_AFFORD_HORIZON_SECONDS,
         building_horizon_seconds=float(stats.get("payback_horizon_seconds") or building_autobuyer.payback_horizon_seconds),
         wrinkler_mode=wrinkler_controller.mode,
@@ -1353,6 +1356,18 @@ def _render_hud():
     )
     lump_timer_text = _format_duration_compact(lump_diag.get("time_to_ripe_seconds"))
     lump_overripe_text = _format_duration_compact(lump_diag.get("time_to_overripe_seconds"))
+    santa_diag = state.get("last_santa_diag") or {}
+    santa_open = "Y" if santa_diag.get("open") else "N"
+    santa_evolve = "Y" if santa_diag.get("evolve_target") else "N"
+    santa_status_text = (
+        f"{santa_diag.get('reason', '-')}"
+        f" | open={santa_open}"
+        f" evolve={santa_evolve}"
+        f" | level={santa_diag.get('level', '-')}/{santa_diag.get('max_level', '-')}"
+        f" | target={santa_diag.get('target_level', '-')}"
+        f" | current={santa_diag.get('current_name') or '-'}"
+        f" | next={santa_diag.get('next_name') or '-'}"
+    )
 
     lines = [
         "Cookie Clicker Bot HUD",
@@ -1377,6 +1392,7 @@ def _render_hud():
             f" | Shimmers/h: {shimmer_per_hour:.1f}"
             f" | Last shimmer: {state['last_shimmer'] or '-'}"
         ),
+        f"Santa: {santa_status_text}",
         (
             f"Click loop: idle_misses={state['click_idle_misses']}"
             f" | suppressed={state['click_suppressed_loops']}"

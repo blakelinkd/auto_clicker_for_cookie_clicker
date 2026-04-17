@@ -1559,6 +1559,7 @@ class QtDashboard(QMainWindow):
         last_bank_diag = state.get("last_bank_diag") or {}
         last_lump_diag = state.get("last_lump_diag") or {}
         last_golden_diag = state.get("last_golden_diag") or {}
+        last_santa_diag = state.get("last_santa_diag") or {}
 
         # Update header
         started_at = state.get("started_at")
@@ -1591,6 +1592,16 @@ class QtDashboard(QMainWindow):
             value = state.get(key)
             if value:
                 last_actions.append(f"{label}: {value}")
+        last_actions.append(
+            "Santa: "
+            f"{last_santa_diag.get('reason', '-')}"
+            f" | open={'Y' if last_santa_diag.get('open') else 'N'}"
+            f" evolve={'Y' if last_santa_diag.get('evolve_target') else 'N'}"
+            f" | level={last_santa_diag.get('level', '-')}/{last_santa_diag.get('max_level', '-')}"
+            f" | target={last_santa_diag.get('target_level', '-')}"
+            f" | current={last_santa_diag.get('current_name') or '-'}"
+            f" | next={last_santa_diag.get('next_name') or '-'}"
+        )
         self.last_actions_label.setText("Last actions: " + (" | ".join(last_actions) if last_actions else "-"))
 
         # Update toggle button states

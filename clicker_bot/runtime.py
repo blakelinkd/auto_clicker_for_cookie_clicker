@@ -11,6 +11,7 @@ class RuntimeConfig:
     upgrade_horizon_seconds: float
     building_horizon_seconds: float
     wrinkler_mode: str
+    garden_mode: str
     stock_trading_enabled: bool
     lucky_reserve_enabled: bool
     building_autobuy_enabled: bool
@@ -54,6 +55,7 @@ class RuntimeStore:
             "last_combo_diag": {},
             "last_wrinkler_diag": {},
             "last_dragon_diag": {},
+            "last_santa_diag": {},
             "last_spell_cast": None,
             "last_trade_action": None,
             "last_garden_action": None,
@@ -62,9 +64,11 @@ class RuntimeStore:
             "last_combo_action": None,
             "last_wrinkler_action": None,
             "last_dragon_action": None,
+            "last_santa_action": None,
             "last_note_action": None,
             "last_lump_action": None,
             "wrinkler_mode": config.wrinkler_mode,
+            "garden_mode": config.garden_mode,
             "stock_trading_enabled": config.stock_trading_enabled,
             "lucky_reserve_enabled": config.lucky_reserve_enabled,
             "building_autobuy_enabled": config.building_autobuy_enabled,

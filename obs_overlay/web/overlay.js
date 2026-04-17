@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-15";
+  const assetVersion = "snake-heat-17";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const sounds = {
@@ -47,6 +47,9 @@
     enrageDuration: 15000,
     enrageEatenThreshold: 15,
     heatTargeting: false,
+    heatStuckSample: null,
+    heatStuckSince: 0,
+    heatRecoveryUntil: 0,
   };
   const combatLog = [];
   let lastDurgularYell = 0;
@@ -151,6 +154,9 @@
     snake.lastTick = performance.now();
     snake.lastFrame = snake.lastTick;
     snake.moveStartedAt = snake.lastTick;
+    snake.heatStuckSample = null;
+    snake.heatStuckSince = 0;
+    snake.heatRecoveryUntil = 0;
   }
 
   function cloneSegments(segments) {
@@ -219,6 +225,8 @@
       existingSpawn.normY = normY;
       existingSpawn.cell = targetToCell(normX, normY);
       existingSpawn.startedAt = performance.now();
+      existingSpawn.hoverPhase = Math.random() * Math.PI * 2;
+      existingSpawn.wigglePhase = Math.random() * Math.PI * 2;
       existingSpawn.eventId = payload.event_id || existingSpawn.eventId || null;
       existingSpawn.mode = payload.mode || existingSpawn.mode || null;
       existingSpawn.beingEaten = false;
@@ -231,6 +239,8 @@
       normY,
       cell: targetToCell(normX, normY),
       startedAt: performance.now(),
+      hoverPhase: Math.random() * Math.PI * 2,
+      wigglePhase: Math.random() * Math.PI * 2,
       shimmerId,
       eventId: payload.event_id || null,
       mode: payload.mode || null,
@@ -244,6 +254,9 @@
     const now = spawn.startedAt;
     bidenSpawnCount += 1;
     queueBidenFocusTalk(now);
+    if (bidenSpawnCount % 5 === 0) {
+      addCombatLogLine("grandma", "I'm going to open you up like a can of sardines!", now + 200);
+    }
     if (bidenSpawnCount % 10 === 0) {
       addCombatLogLine("biotachyonic", biotachyonicWhisper, now + 350, "whisper");
     }
@@ -610,24 +623,25 @@
     const speed = (cellSize / snakeTickMs) * enrageMovementMultiplier(now);
     const maxStep = speed * dt;
     const sizes = segmentSizeMultipliers(snake.heatSegments.length);
+    const targetPoint = target ? bidenCenter(target) : null;
     let desired = target
       ? vectorToward(head, bidenCenter(target))
       : snake.heatDirection;
 
     if (!target) {
-      desired = normalizeVector(addVectors(
-        bounceHeatDirection(head, desired),
-        wallEscapeVector(head)
-      ));
+      desired = bounceHeatDirection(head, desired);
+    }
+    desired = normalizeVector(addVectors(desired, wallEscapeVector(head, targetPoint)));
+    if (snake.heatRecoveryUntil > now) {
+      desired = normalizeVector(addVectors(desired, scaleVector(inwardWallVector(head), 4.5)));
     }
     desired = normalizeVector(addVectors(desired, heatTailAvoidanceVector(head, desired, maxStep, sizes)));
 
-    const targetPoint = target ? bidenCenter(target) : null;
-    desired = chooseHeatDirection(head, desired, maxStep, sizes, targetPoint);
-    snake.heatDirection = desired;
     const previousHead = { x: head.x, y: head.y };
-    head.x += desired.x * maxStep;
-    head.y += desired.y * maxStep;
+    const chosenMove = chooseHeatMove(head, desired, maxStep, sizes, targetPoint);
+    head.x = chosenMove.x;
+    head.y = chosenMove.y;
+    snake.heatDirection = chosenMove.direction;
     clampHeatSegmentsToViewport();
     if (heatHeadCollidesWithTail(head, sizes)) {
       const sidestep = chooseHeatSidestep(previousHead, desired, maxStep, sizes, targetPoint);
@@ -635,6 +649,9 @@
       head.y = sidestep.y;
       snake.heatDirection = sidestep.direction;
       clampHeatSegmentsToViewport();
+    }
+    if (updateHeatStuckState(previousHead, head, now) || snake.heatRecoveryUntil > now) {
+      applyHeatStuckRecovery(head, sizes, maxStep, now);
     }
 
     if (target && pixelDistance(head, bidenCenter(target)) <= cellSize * 0.55) {
@@ -644,6 +661,64 @@
     }
 
     relaxHeatTail();
+  }
+
+  function updateHeatStuckState(previousHead, head, now) {
+    if (heatWallContactCount(head) === 0) {
+      snake.heatStuckSample = null;
+      snake.heatStuckSince = 0;
+      return false;
+    }
+
+    const movedThisFrame = pixelDistance(previousHead, head);
+    if (movedThisFrame > cellSize * 0.18) {
+      snake.heatStuckSample = { x: head.x, y: head.y, at: now };
+      snake.heatStuckSince = 0;
+      return false;
+    }
+
+    if (!snake.heatStuckSample || pixelDistance(snake.heatStuckSample, head) > cellSize * 0.45) {
+      snake.heatStuckSample = { x: head.x, y: head.y, at: now };
+      snake.heatStuckSince = 0;
+      return false;
+    }
+
+    const pinnedMs = now - snake.heatStuckSample.at;
+    if (pinnedMs < 650) return false;
+    if (!snake.heatStuckSince) snake.heatStuckSince = now;
+    snake.heatRecoveryUntil = Math.max(snake.heatRecoveryUntil, now + 900);
+    snake.heatStuckSample = { x: head.x, y: head.y, at: now };
+    return true;
+  }
+
+  function applyHeatStuckRecovery(head, sizes, maxStep, now) {
+    const inward = inwardWallVector(head);
+    if (Math.abs(inward.x) <= 0.001 && Math.abs(inward.y) <= 0.001) return;
+
+    const recoveryProgress = Math.max(0, Math.min(1, (snake.heatRecoveryUntil - now) / 900));
+    const headStep = Math.max(maxStep, cellSize * (0.28 + recoveryProgress * 0.16));
+    const recoveredHead = clampHeatPointToViewport({
+      x: head.x + inward.x * headStep,
+      y: head.y + inward.y * headStep,
+    });
+    head.x = recoveredHead.x;
+    head.y = recoveredHead.y;
+    snake.heatDirection = inward;
+
+    for (let i = 1; i < snake.heatSegments.length; i += 1) {
+      const segment = snake.heatSegments[i];
+      const awayFromHead = vectorAwayFrom(head, segment, inward);
+      const falloff = Math.max(0.2, 1 - (i / Math.max(2, snake.heatSegments.length)));
+      const push = cellSize * 0.42 * falloff;
+      const moved = clampHeatPointToViewport({
+        x: segment.x + inward.x * push + awayFromHead.x * push * 0.85,
+        y: segment.y + inward.y * push + awayFromHead.y * push * 0.85,
+      });
+      segment.x = moved.x;
+      segment.y = moved.y;
+    }
+    enforceSegmentCollisionGaps(snake.heatSegments, sizes, 1);
+    clampHeatSegmentsToViewport();
   }
 
   function nearestHeatTarget(head) {
@@ -676,6 +751,13 @@
     };
   }
 
+  function scaleVector(vector, scale) {
+    return {
+      x: vector.x * scale,
+      y: vector.y * scale,
+    };
+  }
+
   function normalizeVector(vector) {
     const length = Math.sqrt(vector.x * vector.x + vector.y * vector.y);
     if (length <= 0.001) {
@@ -700,17 +782,73 @@
     return length > 0.001 ? { x: next.x / length, y: next.y / length } : { x: 1, y: 0 };
   }
 
-  function wallEscapeVector(head) {
+  function wallEscapeVector(head, targetPoint) {
     const margin = snakeHeadDrawSize / 2;
-    const influence = Math.max(cellSize * 1.25, 1);
+    const influence = Math.max(cellSize * 1.65, 1);
     const left = Math.max(0, influence - (head.x - margin));
     const right = Math.max(0, influence - ((window.innerWidth - margin) - head.x));
     const top = Math.max(0, influence - (head.y - margin));
     const bottom = Math.max(0, influence - ((window.innerHeight - margin) - head.y));
+    const horizontalPressure = Math.max(left, right) / influence;
+    const verticalPressure = Math.max(top, bottom) / influence;
+    const cornerPressure = horizontalPressure * verticalPressure;
+    const targetPullsIntoWall = targetPoint
+      && ((left > 0 && targetPoint.x < head.x)
+        || (right > 0 && targetPoint.x > head.x)
+        || (top > 0 && targetPoint.y < head.y)
+        || (bottom > 0 && targetPoint.y > head.y));
+    const strength = 1.2 + cornerPressure * 3.8 + (targetPullsIntoWall ? 1.4 : 0);
     return {
-      x: (left - right) / influence,
-      y: (top - bottom) / influence,
+      x: ((left - right) / influence) * strength,
+      y: ((top - bottom) / influence) * strength,
     };
+  }
+
+  function inwardWallVector(point) {
+    const margin = snakeHeadDrawSize / 2;
+    const influence = Math.max(cellSize * 1.25, 1);
+    const left = Math.max(0, influence - (point.x - margin));
+    const right = Math.max(0, influence - ((window.innerWidth - margin) - point.x));
+    const top = Math.max(0, influence - (point.y - margin));
+    const bottom = Math.max(0, influence - ((window.innerHeight - margin) - point.y));
+    const vector = {
+      x: left > right ? 1 : right > left ? -1 : 0,
+      y: top > bottom ? 1 : bottom > top ? -1 : 0,
+    };
+    if (Math.abs(vector.x) <= 0.001 && Math.abs(vector.y) <= 0.001) {
+      return { x: 0, y: 0 };
+    }
+    return normalizeVector(vector);
+  }
+
+  function heatWallContactCount(point) {
+    const margin = snakeHeadDrawSize / 2;
+    const contact = Math.max(6, cellSize * 0.12);
+    let contacts = 0;
+    if (point.x - margin <= contact) contacts += 1;
+    if (window.innerWidth - margin - point.x <= contact) contacts += 1;
+    if (point.y - margin <= contact) contacts += 1;
+    if (window.innerHeight - margin - point.y <= contact) contacts += 1;
+    return contacts;
+  }
+
+  function outwardWallPressure(point, direction) {
+    const margin = snakeHeadDrawSize / 2;
+    const influence = Math.max(cellSize * 1.25, 1);
+    let pressure = 0;
+    if (point.x - margin < influence && direction.x < 0) {
+      pressure += ((influence - (point.x - margin)) / influence) * Math.abs(direction.x);
+    }
+    if (window.innerWidth - margin - point.x < influence && direction.x > 0) {
+      pressure += ((influence - (window.innerWidth - margin - point.x)) / influence) * direction.x;
+    }
+    if (point.y - margin < influence && direction.y < 0) {
+      pressure += ((influence - (point.y - margin)) / influence) * Math.abs(direction.y);
+    }
+    if (window.innerHeight - margin - point.y < influence && direction.y > 0) {
+      pressure += ((influence - (window.innerHeight - margin - point.y)) / influence) * direction.y;
+    }
+    return pressure;
   }
 
   function heatTailAvoidanceVector(head, desired, maxStep, sizes) {
@@ -749,10 +887,6 @@
     return false;
   }
 
-  function chooseHeatDirection(head, desired, maxStep, sizes, targetPoint) {
-    return chooseHeatMove(head, desired, maxStep, sizes, targetPoint).direction;
-  }
-
   function chooseHeatSidestep(previousHead, desired, maxStep, sizes, targetPoint) {
     return chooseHeatMove(previousHead, desired, maxStep, sizes, targetPoint);
   }
@@ -764,13 +898,14 @@
 
     const baseDirection = normalizeVector(desired);
     let best = null;
-    for (const direction of heatCandidateDirections(baseDirection)) {
+    for (const direction of heatCandidateDirections(origin, baseDirection)) {
       const point = clampHeatPointToViewport({
         x: origin.x + direction.x * maxStep,
         y: origin.y + direction.y * maxStep,
       });
-      const score = scoreHeatMove(origin, point, direction, baseDirection, sizes, targetPoint);
-      const candidate = { x: point.x, y: point.y, direction, score };
+      const actualDirection = actualHeatMoveDirection(origin, point, direction);
+      const score = scoreHeatMove(origin, point, actualDirection, baseDirection, sizes, targetPoint);
+      const candidate = { x: point.x, y: point.y, direction: actualDirection, score };
       if (!best || candidate.score > best.score) {
         best = candidate;
       }
@@ -779,8 +914,12 @@
     return best || { x: origin.x, y: origin.y, direction: baseDirection };
   }
 
-  function heatCandidateDirections(baseDirection) {
+  function heatCandidateDirections(origin, baseDirection) {
     const directions = [];
+    const escapeDirection = inwardWallVector(origin);
+    if (Math.abs(escapeDirection.x) > 0.001 || Math.abs(escapeDirection.y) > 0.001) {
+      directions.push(escapeDirection);
+    }
     for (const degrees of heatCandidateAngles) {
       const radians = degrees * Math.PI / 180;
       const cos = Math.cos(radians);
@@ -793,6 +932,32 @@
     return directions;
   }
 
+  function actualHeatMoveDirection(origin, point, fallbackDirection) {
+    const dx = point.x - origin.x;
+    const dy = point.y - origin.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance > 0.001) {
+      return { x: dx / distance, y: dy / distance };
+    }
+    const inward = inwardWallVector(origin);
+    const combined = addVectors(inward, fallbackDirection);
+    const combinedLength = Math.sqrt(combined.x * combined.x + combined.y * combined.y);
+    if (combinedLength > 0.001) {
+      return { x: combined.x / combinedLength, y: combined.y / combinedLength };
+    }
+    return Math.abs(inward.x) > 0.001 || Math.abs(inward.y) > 0.001 ? inward : normalizeVector(fallbackDirection);
+  }
+
+  function vectorAwayFrom(origin, point, fallbackDirection) {
+    const dx = point.x - origin.x;
+    const dy = point.y - origin.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance > 0.001) {
+      return { x: dx / distance, y: dy / distance };
+    }
+    return fallbackDirection;
+  }
+
   function scoreHeatMove(origin, point, direction, baseDirection, sizes, targetPoint) {
     const clearance = heatTailClearance(point, sizes);
     const requiredClearance = minHeatTailSpacing(sizes);
@@ -803,8 +968,15 @@
     const targetGain = targetPoint
       ? pixelDistance(origin, targetPoint) - pixelDistance(point, targetPoint)
       : 0;
+    const wallPenalty = wallEscapeMagnitude(point) * 22;
+    const outwardPenalty = outwardWallPressure(origin, direction) * 120;
 
-    return clearance * 4 + wallMargin * 0.25 + movement * 2 + targetGain * 3 - turnPenalty - collisionPenalty;
+    return clearance * 4 + wallMargin * 0.25 + movement * 2 + targetGain * 3 - turnPenalty - collisionPenalty - wallPenalty - outwardPenalty;
+  }
+
+  function wallEscapeMagnitude(point) {
+    const escape = wallEscapeVector(point, null);
+    return Math.sqrt(escape.x * escape.x + escape.y * escape.y);
   }
 
   function heatTailClearance(point, sizes) {
@@ -1039,23 +1211,23 @@
         }
         const scale = 1 - (0.45 * eatProgress);
         const opacity = 1 - eatProgress;
-        drawBidenSprite(spawn, scale, opacity, now, proximityFactor);
+        drawBidenSprite(spawn, scale, opacity, now, proximityFactor, eatProgress);
         continue;
       }
       
       // Normal biden - proximity-based shrink and wiggle
       if (!bidenSprite.complete || !bidenSprite.naturalWidth || !bidenSprite.naturalHeight) continue;
       
-      // Shrink based on proximity (closer = more shrunk)
-      const shrinkFactor = proximityFactor * 0.6;
+      // Keep targets readable while Grandma approaches; eating handles the vanish.
+      const shrinkFactor = Math.pow(proximityFactor, 2.2) * 0.22;
       const scale = 1 - shrinkFactor;
-      const opacity = 1 - (shrinkFactor * 0.3);
+      const opacity = 1;
       
       drawBidenSprite(spawn, scale, opacity, now, proximityFactor);
     }
   }
 
-  function drawBidenSprite(spawn, scale, opacity, now, proximityFactor) {
+  function drawBidenSprite(spawn, scale, opacity, now, proximityFactor, eatenProgress = 0) {
     const baseHeight = defaultBidenHeight;
     const baseWidth = bidenSprite.naturalWidth * (baseHeight / bidenSprite.naturalHeight);
     const drawWidth = baseWidth * scale;
@@ -1063,11 +1235,19 @@
     let targetX = spawn.normX * window.innerWidth;
     let targetY = spawn.normY * window.innerHeight;
     
+    const age = Math.max(0, now - (spawn.startedAt || now));
+    const subtleEase = Math.min(1, age / 650);
+    const hoverPhase = Number.isFinite(spawn.hoverPhase) ? spawn.hoverPhase : 0;
+    const wigglePhase = Number.isFinite(spawn.wigglePhase) ? spawn.wigglePhase : 0;
+    const subtleWiggle = Math.sin((now / 380) + wigglePhase) * 3.2 * subtleEase;
+    const hover = Math.sin((now / 520) + hoverPhase) * 5.0 * subtleEase;
+
     // Frantic wiggle based on proximity
     const wiggleIntensity = proximityFactor * 15;
     const wiggleSpeed = 50 + (proximityFactor * 100); // faster when closer
     const wiggle = Math.sin(now / wiggleSpeed) * wiggleIntensity;
-    targetX += wiggle;
+    targetX += subtleWiggle + wiggle;
+    targetY += hover;
     
     const drawX = targetX - (drawWidth * fingerAnchor.x);
     const drawY = targetY - (drawHeight * fingerAnchor.y);
@@ -1077,7 +1257,20 @@
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(bidenSprite, drawX, drawY, drawWidth, drawHeight);
+    drawBidenEatenFlash(now, drawX, drawY, drawWidth, drawHeight, eatenProgress);
     ctx.restore();
+  }
+
+  function drawBidenEatenFlash(now, drawX, drawY, drawWidth, drawHeight, eatenProgress) {
+    if (eatenProgress <= 0) return;
+    const pulse = (Math.sin(now / 55) + 1) / 2;
+    const intensity = (1 - eatenProgress * 0.35) * (0.42 + pulse * 0.42);
+    ctx.globalCompositeOperation = "source-atop";
+    ctx.globalAlpha *= intensity;
+    ctx.fillStyle = pulse > 0.5 ? "rgb(255, 24, 24)" : "rgb(255, 96, 0)";
+    ctx.fillRect(drawX, drawY, drawWidth, drawHeight);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
   }
 
   function drawCombatLog(now) {

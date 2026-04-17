@@ -1,0 +1,16 @@
+Twemoji fruit graphics
+Source: https://github.com/twitter/twemoji
+Asset URLs:
+- https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f34e.png
+- https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f352.png
+- https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f34c.png
+Copyright: Twitter, Inc and other contributors
+License: CC-BY 4.0
+
+These transparent PNG sprites are bundled as overlay fruit assets:
+- apple.png: red apple, U+1F34E
+- cherry.png: cherries, U+1F352
+- banana.png: banana, U+1F34C
+
+License text:
+https://creativecommons.org/licenses/by/4.0/

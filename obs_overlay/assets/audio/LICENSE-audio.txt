@@ -1,0 +1,20 @@
+OBS overlay audio assets
+
+grandma_cookie.mp3
+Source: https://freesound.org/people/cmilo1269/sounds/491963/
+Preview file: https://cdn.freesound.org/previews/491/491963_10630312-hq.mp3
+Title: Old Lady Scream.wav
+Author: cmilo1269
+License: Creative Commons 0
+Source page states the sound may be copied, modified, distributed, and
+performed, including commercially, without asking permission.
+
+dean_scream.mp3
+Source: https://www.soundboardly.com/sounds/howard-dean-scream/
+File: https://cdn.soundboardly.com/uploads/2021/06/howard-dean-scream.mp3
+Title: Howard Dean Scream
+Rights note: Publicly available soundboard clip selected for this local OBS
+overlay prototype at the user's request. The source page provides free playback
+and MP3 download but does not state an open-content license.
+
+Date accessed: 2026-04-16

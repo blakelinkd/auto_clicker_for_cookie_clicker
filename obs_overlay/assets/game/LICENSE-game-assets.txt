@@ -1,0 +1,14 @@
+Cookie Clicker game sprite copies
+
+Source directory:
+D:\SteamLibrary\steamapps\common\Cookie Clicker\resources\app\src\img
+
+Bundled overlay assets:
+- frenzy_cookie.png: copied from goldCookie.png
+- grandma_full.png: copied from grandma.png
+- grandma_head.png: cropped from grandma.png
+- grandma_head_smooth.png: cropped from buildings.png and upscaled for the
+  overlay snake segments
+
+These files are copied from the locally installed Cookie Clicker game assets for
+use in the local OBS overlay prototype.

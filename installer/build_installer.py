@@ -27,6 +27,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 DIST_DIR = PROJECT_ROOT / "dist"
 BUILD_DIR = PROJECT_ROOT / "build"
+INSTALLER_OUTPUT_DIR = DIST_DIR / "installer"
 SPEC_FILE = PROJECT_ROOT / "installer" / "pyinstaller.spec"
 INNO_SETUP_SCRIPT = PROJECT_ROOT / "installer" / "installer.iss"
 
@@ -129,24 +130,6 @@ def run_pyinstaller():
         return False
 
 
-def check_inno_setup():
-    """Check if Inno Setup compiler is available."""
-    inno_paths = [
-        Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"),
-        Path(r"C:\Program Files\Inno Setup 6\ISCC.exe"),
-    ]
-    
-    for path in inno_paths:
-        if path.exists():
-            return path
-    
-    inno_path = shutil.which("iscc")
-    if inno_path:
-        return Path(inno_path)
-    
-    return None
-
-
 def run_inno_setup(iscc_path):
     """Run Inno Setup compiler to create the installer."""
     print("\n=== Running Inno Setup ===")
@@ -197,9 +180,9 @@ def verify_build():
     installer_exe = INSTALLER_OUTPUT_DIR / "CookieClickerAutoClicker_Setup.exe"
     if installer_exe.exists():
         size_mb = installer_exe.stat().st_size / (1024 * 1024)
-        print(f"✓ Installer: {installer_exe} ({size_mb:.1f} MB)")
+        print(f"[OK] Installer: {installer_exe} ({size_mb:.1f} MB)")
     else:
-        print(f"✗ Installer not found: {installer_exe}")
+        print(f"[FAIL] Installer not found: {installer_exe}")
 
 
 def main():

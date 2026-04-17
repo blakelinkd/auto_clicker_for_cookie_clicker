@@ -1,15 +1,28 @@
 import json
-import tempfile
+import shutil
+from uuid import uuid4
 from pathlib import Path
 
 from clicker_bot.config import AppConfig
 from clicker_bot.config_manager import load_config, save_config
 
 
+def make_workspace_temp_dir():
+    base_dir = Path.cwd() / ".test_tmp" / f"config_manager_{uuid4().hex}"
+    base_dir.mkdir(parents=True, exist_ok=False)
+    return base_dir
+
+
+def cleanup_workspace_temp_dir(path: Path):
+    if path.exists():
+        shutil.rmtree(path)
+
+
 def test_save_and_load_default_config():
     """Save default config, load it back, fields match."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config_path = Path(tmpdir) / "test_config.json"
+    tmpdir = make_workspace_temp_dir()
+    try:
+        config_path = tmpdir / "test_config.json"
         config = AppConfig()
         save_config(config, config_path)
         assert config_path.exists()
@@ -17,12 +30,15 @@ def test_save_and_load_default_config():
         assert loaded.register_hotkeys == True
         assert loaded.auto_launch_game == False
         assert loaded.game_install_dir is None
+    finally:
+        cleanup_workspace_temp_dir(tmpdir)
 
 
 def test_save_and_load_custom_config():
     """Save config with custom values."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config_path = Path(tmpdir) / "test_config.json"
+    tmpdir = make_workspace_temp_dir()
+    try:
+        config_path = tmpdir / "test_config.json"
         install_dir = Path("C:/Some/Path")
         config = AppConfig(
             register_hotkeys=False,
@@ -60,22 +76,28 @@ def test_save_and_load_custom_config():
         assert loaded.wrinkler_mode == "shiny_hunt"
         assert loaded.building_caps == {"Cursor": 123}
         assert loaded.ignored_building_caps == ("Mine",)
+    finally:
+        cleanup_workspace_temp_dir(tmpdir)
 
 
 def test_load_missing_file_returns_default():
     """Loading a non-existent config returns defaults."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config_path = Path(tmpdir) / "missing.json"
+    tmpdir = make_workspace_temp_dir()
+    try:
+        config_path = tmpdir / "missing.json"
         config = load_config(config_path)
         assert config.register_hotkeys == True
         assert config.auto_launch_game == False
         assert config.game_install_dir is None
+    finally:
+        cleanup_workspace_temp_dir(tmpdir)
 
 
 def test_load_corrupted_file_returns_default():
     """Corrupted JSON falls back to defaults."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config_path = Path(tmpdir) / "corrupt.json"
+    tmpdir = make_workspace_temp_dir()
+    try:
+        config_path = tmpdir / "corrupt.json"
         with open(config_path, "w", encoding="utf-8") as f:
             f.write("{ invalid json")
         config = load_config(config_path)
@@ -84,12 +106,15 @@ def test_load_corrupted_file_returns_default():
         assert config.register_hotkeys == True
         assert config.auto_launch_game == False
         assert config.game_install_dir is None
+    finally:
+        cleanup_workspace_temp_dir(tmpdir)
 
 
 def test_config_without_optional_fields():
     """Backward compatibility: missing fields use defaults."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config_path = Path(tmpdir) / "old.json"
+    tmpdir = make_workspace_temp_dir()
+    try:
+        config_path = tmpdir / "old.json"
         data = {
             # Only older fields may be present
         }
@@ -99,3 +124,5 @@ def test_config_without_optional_fields():
         assert config.register_hotkeys == True  # default
         assert config.auto_launch_game == False
         assert config.game_install_dir is None
+    finally:
+        cleanup_workspace_temp_dir(tmpdir)

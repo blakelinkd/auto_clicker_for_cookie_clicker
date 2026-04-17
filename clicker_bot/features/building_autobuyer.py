@@ -17,6 +17,7 @@ BETTER_TARGET_PAYBACK_RATIO = 0.5
 DRAGON_PRIORITY_COOKIES_RATIO = 0.25
 DRAGON_PRIORITY_REMAINING_THRESHOLD = 3
 DRAGON_PRIORITY_PAYBACK_RATIO = 1.5
+DRAGON_CAP_OVERRIDE_MIN_REQUIRED = 200
 EARLY_GAME_BULK_TOTAL_BUILDINGS = 80
 EARLY_GAME_BULK_MAX_SINGLE_PRICE_RATIO = 0.10
 MINIGAME_BUILDING_RETAIN_FLOORS = {
@@ -151,9 +152,11 @@ class BuildingAutobuyer:
             return None
 
         self._update_observed_peak_amounts(state["buildings"])
+        dragon_cap_override = self._should_suspend_caps_for_dragon_target(state.get("dragon_target"))
         trim_candidate = self._find_cap_trim_candidate(
             state["buildings"],
             dragon_target=state.get("dragon_target"),
+            ignore_caps=dragon_cap_override,
         )
         if trim_candidate is not None:
             target = trim_candidate["target"]
@@ -180,6 +183,7 @@ class BuildingAutobuyer:
             dragon_target=state.get("dragon_target"),
             minigame_targets=state.get("minigame_targets"),
             active_building_buffs=state.get("active_building_buffs"),
+            ignore_caps=dragon_cap_override,
             require_affordable=True,
         )
         next_candidate = self._find_best_candidate(
@@ -190,6 +194,7 @@ class BuildingAutobuyer:
             dragon_target=state.get("dragon_target"),
             minigame_targets=state.get("minigame_targets"),
             active_building_buffs=state.get("active_building_buffs"),
+            ignore_caps=dragon_cap_override,
             require_affordable=False,
         )
         hold_for_better_target = self._should_hold_for_better_target(candidate, next_candidate)
@@ -222,6 +227,7 @@ class BuildingAutobuyer:
         quantity = self._limit_buy_quantity(
             candidate,
             self._select_buy_quantity(candidate, state["cookies"], reserve, state["total_buildings"]),
+            ignore_caps=dragon_cap_override,
         )
         return BuildingAction(
             kind="buy_building",
@@ -263,6 +269,7 @@ class BuildingAutobuyer:
             }
 
         self._update_observed_peak_amounts(state["buildings"])
+        dragon_cap_override = self._should_suspend_caps_for_dragon_target(state.get("dragon_target"))
         reserve = self._calculate_reserve(state["cookies"], state["cookies_ps"], state["total_buildings"])
         total_buildings = state["total_buildings"]
         candidate = self._find_best_candidate(
@@ -273,6 +280,7 @@ class BuildingAutobuyer:
             dragon_target=state.get("dragon_target"),
             minigame_targets=state.get("minigame_targets"),
             active_building_buffs=state.get("active_building_buffs"),
+            ignore_caps=dragon_cap_override,
             require_affordable=True,
         )
         next_candidate = self._find_best_candidate(
@@ -283,6 +291,7 @@ class BuildingAutobuyer:
             dragon_target=state.get("dragon_target"),
             minigame_targets=state.get("minigame_targets"),
             active_building_buffs=state.get("active_building_buffs"),
+            ignore_caps=dragon_cap_override,
             require_affordable=False,
         )
         affordable = sum(
@@ -318,6 +327,8 @@ class BuildingAutobuyer:
             "reserve_scale": self._calculate_reserve_scale(total_buildings),
             "effective_reserve_cps_seconds": self.reserve_cps_seconds * self._calculate_reserve_scale(total_buildings),
             "cap_floor": self._calculate_cap_floor(state["cookies"]),
+            "dragon_cap_override_active": dragon_cap_override,
+            "dragon_cap_override_threshold": DRAGON_CAP_OVERRIDE_MIN_REQUIRED,
             "spendable": max(0.0, state["cookies"] - reserve),
             "spend_cap_ratio": self.max_spend_ratio,
             "payback_horizon_seconds": self.payback_horizon_seconds,
@@ -334,6 +345,7 @@ class BuildingAutobuyer:
             else self._limit_buy_quantity(
                 candidate,
                 self._select_buy_quantity(candidate, state["cookies"], reserve, state["total_buildings"]),
+                ignore_caps=dragon_cap_override,
             ),
             "candidate_delta_cps": None if candidate is None else candidate["delta_cps"],
             "candidate_payback_seconds": None if candidate is None else candidate["payback_seconds"],
@@ -350,6 +362,7 @@ class BuildingAutobuyer:
             else self._limit_buy_quantity(
                 next_candidate,
                 self._select_buy_quantity(next_candidate, state["cookies"], reserve, state["total_buildings"]),
+                ignore_caps=dragon_cap_override,
             ),
             "next_candidate_delta_cps": None if next_candidate is None else next_candidate["delta_cps"],
             "next_candidate_payback_seconds": None if next_candidate is None else next_candidate["payback_seconds"],
@@ -368,7 +381,7 @@ class BuildingAutobuyer:
             ),
             "dragon_target": state.get("dragon_target"),
             "minigame_targets": state.get("minigame_targets"),
-            "buildings": [self._describe_building_cap(item) for item in state["buildings"]],
+            "buildings": [self._describe_building_cap(item, ignore_caps=dragon_cap_override) for item in state["buildings"]],
         }
 
     def _extract_store_buy_mode(self, snapshot):
@@ -396,6 +409,7 @@ class BuildingAutobuyer:
         dragon_target=None,
         minigame_targets=None,
         active_building_buffs=None,
+        ignore_caps=False,
         require_affordable=True,
     ):
         spendable = cookies - reserve
@@ -412,6 +426,7 @@ class BuildingAutobuyer:
             spendable,
             horizon_budget,
             active_building_buffs=active_building_buffs,
+            ignore_caps=ignore_caps,
             require_affordable=require_affordable,
         )
         if self._should_prioritize_dragon_candidate(
@@ -430,6 +445,7 @@ class BuildingAutobuyer:
         spendable,
         horizon_budget,
         active_building_buffs=None,
+        ignore_caps=False,
         require_affordable=True,
     ):
         candidates = []
@@ -441,7 +457,7 @@ class BuildingAutobuyer:
                 continue
             if require_affordable and not item["can_buy"]:
                 continue
-            cap = self._get_cap_for_building(item)
+            cap = self._get_cap_for_building(item, ignore_caps=ignore_caps)
             if cap is not None and int(item["amount"]) >= int(cap):
                 continue
             if item["price"] <= 0:
@@ -521,7 +537,7 @@ class BuildingAutobuyer:
             return candidate
         return None
 
-    def _find_cap_trim_candidate(self, buildings, dragon_target=None):
+    def _find_cap_trim_candidate(self, buildings, dragon_target=None, ignore_caps=False):
         active_dragon_target_id = None
         if isinstance(dragon_target, dict) and dragon_target.get("building_id") is not None:
             try:
@@ -534,7 +550,7 @@ class BuildingAutobuyer:
             item_id = int(item.get("id") or -1)
             if active_dragon_target_id is not None and item_id == active_dragon_target_id:
                 continue
-            cap = self._get_cap_for_building(item)
+            cap = self._get_cap_for_building(item, ignore_caps=ignore_caps)
             if cap is None:
                 continue
             amount = int(item.get("amount") or 0)
@@ -716,7 +732,7 @@ class BuildingAutobuyer:
         peak = int(self.observed_peak_amounts.get(building_id, amount))
         return max(0, peak - amount)
 
-    def _limit_buy_quantity(self, candidate, quantity):
+    def _limit_buy_quantity(self, candidate, quantity, ignore_caps=False):
         if not isinstance(candidate, dict):
             return 1
         quantity = max(1, int(quantity or 1))
@@ -724,7 +740,7 @@ class BuildingAutobuyer:
         if candidate.get("dragon_target"):
             remaining = max(0, int(candidate.get("dragon_remaining") or 0))
             return 1 if remaining <= 0 else min(quantity, remaining)
-        cap = self._get_cap_for_building(candidate)
+        cap = self._get_cap_for_building(candidate, ignore_caps=ignore_caps)
         if cap is None:
             return quantity
         remaining_to_cap = max(0, int(cap) - amount)
@@ -860,13 +876,13 @@ class BuildingAutobuyer:
                 self.ignored_building_caps.discard(str(building_name))
             return str(building_name) in self.ignored_building_caps
 
-    def _describe_building_cap(self, item):
+    def _describe_building_cap(self, item, ignore_caps=False):
         amount = int(item.get("amount", 0))
         name = item.get("name")
         default_cap = self.default_building_caps.get(name)
-        current_cap = self._get_cap_for_building(item)
+        current_cap = self._get_cap_for_building(item, ignore_caps=ignore_caps)
         manual_cap = self._get_manual_cap(name)
-        cap_ignored = self._is_cap_ignored(name)
+        cap_ignored = ignore_caps or self._is_cap_ignored(name)
         remaining = None if current_cap is None else max(0, int(current_cap) - amount)
         return {
             "id": item.get("id"),
@@ -880,7 +896,9 @@ class BuildingAutobuyer:
             "cap_reached": False if current_cap is None else amount >= int(current_cap),
         }
 
-    def _get_cap_for_building(self, item):
+    def _get_cap_for_building(self, item, ignore_caps=False):
+        if ignore_caps:
+            return None
         name = item.get("name")
         with self.settings_lock:
             if name in self.ignored_building_caps:
@@ -901,3 +919,12 @@ class BuildingAutobuyer:
     def _is_cap_ignored(self, building_name):
         with self.settings_lock:
             return building_name in self.ignored_building_caps
+
+    def _should_suspend_caps_for_dragon_target(self, dragon_target):
+        if not isinstance(dragon_target, dict):
+            return False
+        try:
+            required_amount = int(dragon_target.get("required_amount") or 0)
+        except Exception:
+            return False
+        return required_amount >= DRAGON_CAP_OVERRIDE_MIN_REQUIRED

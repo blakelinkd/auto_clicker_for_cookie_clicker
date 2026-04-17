@@ -48,6 +48,21 @@ Download the Windows installer from the [Releases](https://github.com/blakelinkd
 2. Run the installer
 3. Launch "Cookie Clicker Auto-Clicker" from your Start Menu or Desktop shortcut
 
+### OBS Overlay
+The repository also includes a standalone OBS Studio overlay in [`obs_overlay`](../obs_overlay/README.md).
+
+Run it with:
+```powershell
+python .\obs_overlay\server.py
+```
+
+Then add this Browser Source in OBS:
+```text
+http://127.0.0.1:47651/
+```
+
+The overlay receives local bot events and renders the Cookie Clicker HUD and visual effects as a transparent browser source.
+
 ## 🚀 Quick Start (Development)
 
 1. **Install dependencies**  

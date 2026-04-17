@@ -110,5 +110,6 @@ def save_config(config: AppConfig, config_path: Optional[Path] = None) -> None:
     if config_path is None:
         config_path = _get_config_dir() / CONFIG_FILE_NAME
     data = _config_to_dict(config)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)

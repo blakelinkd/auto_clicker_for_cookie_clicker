@@ -29,15 +29,15 @@ python installer/build_installer.py
 ```
 
 Output:
-- `installer/dist/main/CookieClickerAutoClicker.exe` - Frozen executable
-- `installer/dist/installer/CookieClickerAutoClicker_Setup.exe` - Windows installer
+- `dist/main/CookieClickerAutoClicker.exe` - Frozen executable
+- `dist/installer/CookieClickerAutoClicker_Setup.exe` - Windows installer
 
 ### Build Options
 
 | Flag | Description |
 |------|-------------|
 | `--pyinstaller-only` | Build only the frozen exe (skip installer) |
-| `--installer-only` | Build only the installer (requires existing exe in `installer/dist/main/`) |
+| `--installer-only` | Build only the installer (requires existing exe in `dist/main/`) |
 
 ### Build Without Cleaning
 
@@ -125,7 +125,7 @@ Run: `pip install pyinstaller`
 
 Run a local build first:
 ```bash
-python build_installer.py
+python installer/build_installer.py
 ```
 
 Then manually test the installer before creating a tag.

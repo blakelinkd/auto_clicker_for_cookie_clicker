@@ -708,6 +708,49 @@ class BuildingAutobuyerHorizonTests(unittest.TestCase):
         self.assertEqual(trim_action.building_name, "Bank")
         self.assertEqual(trim_action.quantity, 1)
 
+    def test_dragon_floor_at_two_hundred_suspends_caps_temporarily(self):
+        autobuyer = BuildingAutobuyer(
+            _LogStub(),
+            reserve_cps_seconds=0.0,
+            max_spend_ratio=1.0,
+            payback_horizon_seconds=180.0,
+        )
+        autobuyer.set_building_cap("Bank", 98)
+        snapshot = {
+            "cookies": 600_000_000_000.0,
+            "cookiesPs": 10.0,
+            "store": {"buyMode": 1, "buyBulk": 1},
+            "dragon": {
+                "nextCostType": "building_sacrifice",
+                "nextRequiredBuildingId": 0,
+                "nextRequiredBuildingName": "Cursor",
+                "nextRequiredBuildingAmount": 200,
+            },
+            "buildings": [
+                {
+                    "id": 5,
+                    "name": "Bank",
+                    "amount": 98,
+                    "price": 537_000_000_000.0,
+                    "storedCps": 23_000.0,
+                    "target": _rect(30, 30),
+                    "canBuy": True,
+                    "canSell": True,
+                    "sellValue1": 100.0,
+                },
+            ],
+        }
+
+        action = autobuyer.get_action(snapshot, _identity_point, now=10.0)
+        diag = autobuyer.get_diagnostics(snapshot, _identity_point)
+
+        self.assertIsNotNone(action)
+        self.assertEqual(action.kind, "buy_building")
+        self.assertEqual(action.building_name, "Bank")
+        self.assertTrue(diag["dragon_cap_override_active"])
+        self.assertTrue(diag["buildings"][0]["cap_ignored"])
+        self.assertIsNone(diag["buildings"][0]["cap"])
+
     def test_manual_cap_clamps_bulk_buy_quantity(self):
         autobuyer = BuildingAutobuyer(
             _LogStub(),

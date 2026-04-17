@@ -12,6 +12,7 @@
     grandma: createAudioPool(`/assets/audio/grandma_cookie.mp3?v=${assetVersion}`, 0.45, 4),
   };
   const bidenSpawns = [];
+  const bidenSpawnByShimmerId = new Map();
 
   const fingerAnchor = { x: 0.0071, y: 0.1389 };
   const defaultBidenHeight = 320;
@@ -188,13 +189,36 @@
     const normX = clamp01(target.norm_x);
     const normY = clamp01(target.norm_y);
     if (!Number.isFinite(normX) || !Number.isFinite(normY)) return false;
-    bidenSpawns.push({
+    const shimmerId = payload.shimmer && payload.shimmer.id != null ? String(payload.shimmer.id) : null;
+    const existingSpawn = shimmerId !== null ? bidenSpawnByShimmerId.get(shimmerId) : null;
+    if (existingSpawn) {
+      existingSpawn.normX = normX;
+      existingSpawn.normY = normY;
+      existingSpawn.cell = targetToCell(normX, normY);
+      existingSpawn.startedAt = performance.now();
+      existingSpawn.eventId = payload.event_id || existingSpawn.eventId || null;
+      existingSpawn.mode = payload.mode || existingSpawn.mode || null;
+      existingSpawn.beingEaten = false;
+      existingSpawn.eatenAt = null;
+      return true;
+    }
+
+    const spawn = {
       normX,
       normY,
       cell: targetToCell(normX, normY),
       startedAt: performance.now(),
-    });
-    const now = performance.now();
+      shimmerId,
+      eventId: payload.event_id || null,
+      mode: payload.mode || null,
+      beingEaten: false,
+      eatenAt: null,
+    };
+    bidenSpawns.push(spawn);
+    if (shimmerId !== null) {
+      bidenSpawnByShimmerId.set(shimmerId, spawn);
+    }
+    const now = spawn.startedAt;
     bidenSpawnCount += 1;
     queueBidenFocusTalk(now);
     if (bidenSpawnCount % 10 === 0) {
@@ -392,7 +416,12 @@
           break;
         }
       }
-      if (!placed) break;
+      if (!placed) {
+        segments.push({
+          x: head.x + attempts[0].x * i,
+          y: head.y + attempts[0].y * i,
+        });
+      }
     }
     return segments;
   }
@@ -482,6 +511,10 @@
 
     if (snake.grow > 0) {
       snake.grow -= 1;
+      const tail = snake.segments[snake.segments.length - 1];
+      if (tail) {
+        snake.segments.push({ x: tail.x, y: tail.y });
+      }
     } else {
       snake.segments.pop();
     }
@@ -648,7 +681,7 @@
           const dy = prevSegment.y - segment.y;
           
           // Offset in the opposite direction of movement to create trailing gap
-          const trailOffset = cellSize * 0.15; // 15% of cell size
+          const trailOffset = cellSize * 0.15 * Math.max(0.45, sizes[i]);
           x += dx * trailOffset;
           y += dy * trailOffset;
         }
@@ -733,6 +766,9 @@
       if (spawn.beingEaten && spawn.eatenAt) {
         const eatProgress = Math.max(0, Math.min(1, (now - spawn.eatenAt) / 400));
         if (eatProgress >= 1) {
+          if (spawn.shimmerId !== null) {
+            bidenSpawnByShimmerId.delete(spawn.shimmerId);
+          }
           bidenSpawns.splice(i, 1);
           continue;
         }

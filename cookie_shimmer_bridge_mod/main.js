@@ -1606,16 +1606,44 @@ Game.registerMod("shimmer bridge", {
 			const maxLevel = typeof Game.santaMax === "number" ? Game.santaMax : Game.santaLevels.length - 1;
 			const currentLevel = Game.santaLevels[santaLevel] || null;
 			const nextLevel = santaLevel < maxLevel ? Game.santaLevels[santaLevel + 1] : null;
-			const clickTarget = getRect(findFirstElement(["#santaClick"]));
+			const open = Game.specialTab === "santa";
+			const nextCost = santaLevel < maxLevel ? Math.pow(santaLevel + 1, santaLevel + 1) : null;
+			const cookies = typeof Game.cookies === "number" ? Game.cookies : null;
+			const canEvolve = cookies !== null && nextCost !== null ? cookies > nextCost : false;
+			const clickTarget = getRect(findFirstElement(["#santaClick"])) || getSpecialTabRect("santa");
 			const selectTarget = getRect(findFirstElement(["#santaLevel"]));
+			let evolveTarget = null;
+			if (open) {
+				let nodes = [];
+				try {
+					nodes = Array.from(
+						document.querySelectorAll(
+							"#specialPopup .optionBox a.option.framed.large.title,#specialPopup .optionBox a.option"
+						)
+					);
+				} catch (err) {
+					nodes = [];
+				}
+				for (let i = 0; i < nodes.length; i++) {
+					if (getInlineHandlerMatch(nodes[i], /Game\.UpgradeSanta\(\)/)) {
+						evolveTarget = getRect(nodes[i]);
+						break;
+					}
+				}
+			}
 			return {
 				unlocked: !!(Game.Has && Game.Has("A festive hat")),
+				open: open,
 				level: santaLevel,
 				maxLevel: maxLevel,
 				currentName: currentLevel,
 				nextName: nextLevel,
+				nextCost: nextCost,
+				cookies: cookies,
+				canEvolve: canEvolve,
 				clickTarget: clickTarget,
 				selectTarget: selectTarget,
+				evolveTarget: evolveTarget,
 			};
 		};
 

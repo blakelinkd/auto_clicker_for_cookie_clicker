@@ -173,6 +173,7 @@ class BuildDefaultDomLoopServiceFactoryTests(unittest.TestCase):
             garden_controller=object(),
             wrinkler_controller=object(),
             ascension_controller=object(),
+            santa_controller=object(),
             stock_trader=object(),
             building_autobuyer=object(),
             lump_action_cooldown=0.6,

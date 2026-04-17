@@ -728,6 +728,18 @@ class DomStagePolicy:
         )
 
     @staticmethod
+    def can_plan_santa(
+        *,
+        pause_non_click_actions: bool,
+        allow_non_click_actions_during_pause: bool,
+        combo_pending: bool,
+        shimmers_present: bool,
+    ) -> bool:
+        return (
+            not pause_non_click_actions or allow_non_click_actions_during_pause
+        ) and not combo_pending and not shimmers_present
+
+    @staticmethod
     def allow_dragon_aura_actions(
         *,
         now: float,
@@ -1140,10 +1152,9 @@ class DomShimmerHandler:
                         hold=self._bonus_click_hold,
                     )
                 click_time = self._monotonic()
-                if overlay_pre_emitted:
-                    self._overlay_preview_started.pop(target_id, None)
-                else:
-                    self._emit_overlay_spawn(priority_shimmer, mode="planned", clicked_at=click_time)
+                target_id = int(priority_shimmer["id"])
+                self._overlay_preview_started.pop(target_id, None)
+                self._emit_overlay_spawn(priority_shimmer, mode="planned", clicked_at=click_time)
                 self._recent_shimmer_clicks[priority_shimmer["id"]] = click_time
                 self._pending_shimmer_results[priority_shimmer["id"]] = self._build_pending_result(
                     shimmer=priority_shimmer,
@@ -1185,6 +1196,7 @@ class DomShimmerHandler:
         should_skip_wrath = self._should_skip_wrath_shimmer(context.buffs)
         for shimmer in ([] if context.pause_value_actions_during_clot or not context.shimmer_autoclick_enabled else context.shimmers):
             if should_skip_wrath and shimmer.get("wrath"):
+                self._emit_skipped_wrath_overlay(shimmer, context.now)
                 continue
             first_seen = self._shimmer_first_seen.get(shimmer["id"], context.now)
             click_delay = 0.15 if shimmer.get("type") == "fortune" else self._shimmer_click_delay_seconds
@@ -1242,10 +1254,8 @@ class DomShimmerHandler:
                 )
             click_time = self._monotonic()
             shimmer_id = int(shimmer["id"])
-            if overlay_pre_emitted:
-                self._overlay_preview_started.pop(shimmer_id, None)
-            else:
-                self._emit_overlay_spawn(shimmer, mode="clicked", clicked_at=click_time)
+            self._overlay_preview_started.pop(shimmer_id, None)
+            self._emit_overlay_spawn(shimmer, mode="clicked", clicked_at=click_time)
             self._recent_shimmer_clicks[shimmer["id"]] = click_time
             self._pending_shimmer_results[shimmer["id"]] = self._build_pending_result(
                 shimmer=shimmer,
@@ -1316,6 +1326,15 @@ class DomShimmerHandler:
                 self._log.debug(f"Overlay event ignored after shimmer click: {exc}")
             except Exception:
                 pass
+
+    def _emit_skipped_wrath_overlay(self, shimmer: dict[str, Any], now: float) -> None:
+        if self._overlay_event_sender is None:
+            return
+        shimmer_id = int(shimmer["id"])
+        if shimmer_id in self._overlay_preview_started:
+            return
+        self._emit_overlay_spawn(shimmer, mode="wrath_skipped_preview", clicked_at=now)
+        self._overlay_preview_started[shimmer_id] = now
 
     @staticmethod
     def _build_pending_result(
@@ -1758,6 +1777,7 @@ class DomLoopStageRunner:
         garden_controller: Any,
         wrinkler_controller: Any,
         ascension_controller: Any,
+        santa_controller: Any,
         stock_trader: Any,
         building_autobuyer: Any,
         log: Any,
@@ -1801,6 +1821,7 @@ class DomLoopStageRunner:
         self._garden_controller = garden_controller
         self._wrinkler_controller = wrinkler_controller
         self._ascension_controller = ascension_controller
+        self._santa_controller = santa_controller
         self._stock_trader = stock_trader
         self._building_autobuyer = building_autobuyer
         self._log = log
@@ -2084,6 +2105,31 @@ class DomLoopStageRunner:
                 return DomLoopActionOutcome()
             return DomLoopActionOutcome(handled=True, updates={"last_dragon_action": handled_at})
 
+        def _santa_stage():
+            if not self._stage_policy.can_plan_santa(
+                pause_non_click_actions=context.pause_non_click_actions,
+                allow_non_click_actions_during_pause=context.allow_non_click_actions_during_pause,
+                combo_pending=context.combo_pending,
+                shimmers_present=bool(context.shimmers),
+            ):
+                return DomLoopActionOutcome()
+            santa_action = self._santa_controller.get_action(
+                context.snapshot,
+                self._to_screen_point,
+                now=context.now,
+            )
+            if santa_action is None:
+                return DomLoopActionOutcome()
+            handled_at = self._action_executor.execute_santa_action(
+                santa_action,
+                context.now,
+                context.action_started,
+                self._santa_controller,
+            )
+            if handled_at is None:
+                return DomLoopActionOutcome()
+            return DomLoopActionOutcome(handled=True)
+
         def _ascension_stage():
             ascension_prep_action = None
             ascension_prep_store_action = None
@@ -2230,6 +2276,7 @@ class DomLoopStageRunner:
                 _upgrade_stage,
                 _wrinkler_stage,
                 _dragon_stage,
+                _santa_stage,
                 _ascension_stage,
                 _trade_stage,
                 _building_stage,
@@ -3180,6 +3227,39 @@ class DomActionExecutor:
             f"Dragon {dragon_action['kind']} "
             f"{dragon_diag.get('next_action') or dragon_diag.get('current_name')}"
         )
+        self._sleep(self._feed_poll_interval)
+        return action_at
+
+    def execute_santa_action(self, santa_action: Any, now: float, action_started: float, santa_recorder: Any) -> float | None:
+        if not self._can_interact_with_game(now):
+            self._sleep(self._feed_poll_interval)
+            return None
+        if self._ui_owner_conflicts("santa", now):
+            self._sleep(self._feed_poll_interval)
+            return None
+        self._record_profile_ms("dom_action", (self._perf_counter() - action_started) * 1000.0, spike_ms=25.0)
+        self._suppress_main_click(now)
+        self._log.info(
+            f"Clicking santa level={santa_action.level}/{santa_action.max_level} "
+            f"current={santa_action.current_name} next={santa_action.next_name} "
+            f"target={santa_action.target_level} "
+            f"screen=({santa_action.screen_x},{santa_action.screen_y}) "
+            f"reason={santa_action.reason}"
+        )
+        with self._click_lock:
+            self._click(santa_action.screen_x, santa_action.screen_y, hold=self._building_click_hold)
+        self._claim_ui_owner("santa", now)
+        santa_recorder.record_action(santa_action)
+        self._set_runtime(
+            last_santa_action=(
+                f"{santa_action.current_name or 'Santa'} -> {santa_action.next_name or santa_action.target_level}"
+            )
+        )
+        self._record_event(
+            f"Santa level-up level={santa_action.level} "
+            f"current={santa_action.current_name} next={santa_action.next_name}"
+        )
+        action_at = self._time_monotonic()
         self._sleep(self._feed_poll_interval)
         return action_at
 

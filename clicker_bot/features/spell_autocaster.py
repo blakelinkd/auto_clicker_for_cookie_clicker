@@ -131,7 +131,10 @@ class SpellAutocaster:
         hand = state["spells_by_key"].get(HAND_OF_FATE_KEY)
         valuable_buffs = [buff["name"] for buff in state["buffs"] if self._is_valuable_buff(buff["name"])]
         long_running_buffs = self._get_long_running_buffs(state)
-        combo_eval = evaluate_combo_buffs({buff["name"] for buff in state["buffs"]})
+        combo_eval = evaluate_combo_buffs(
+            {buff["name"] for buff in state["buffs"]},
+            spell_ready=bool(hand and hand.get("ready")),
+        )
         hand_forecast = state.get("hand_of_fate_forecast") or {}
         reactive_stack = self._has_reactive_combo_stack(state)
         now = time.monotonic()
@@ -167,6 +170,7 @@ class SpellAutocaster:
             "ready_spells": sum(1 for spell in state["spells"] if spell["ready"]),
             "valuable_buffs": tuple(valuable_buffs),
             "combo_stage": combo_eval["stage"],
+            "combo_phase": combo_eval["phase"],
             "hand_of_fate_outcome": hand_forecast.get("outcome"),
             "hand_of_fate_backfire": hand_forecast.get("backfire"),
             "hand_of_fate_fail_chance": hand_forecast.get("failChance"),

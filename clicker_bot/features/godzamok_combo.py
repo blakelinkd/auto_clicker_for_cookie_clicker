@@ -149,6 +149,7 @@ class GodzamokComboEngine:
             "reason": "combo_ready" if candidate is not None else self._combo_block_reason(state),
             "ruin_level": state["ruin_level"],
             "ruin_bonus_per_sale": state["ruin_bonus_per_sale"],
+            "combo_phase": state["combo_eval"]["phase"],
             "computed_mouse_cps": state["computed_mouse_cps"],
             "buffs": tuple(buff["name"] for buff in state["buffs"]),
             "temple_on_minigame": state["temple_on_minigame"],
@@ -492,7 +493,7 @@ class GodzamokComboEngine:
         else:
             hand_spell = None
         buff_names = {buff.get("name") for buff in buffs if isinstance(buff, dict) and buff.get("name")}
-        combo_eval = evaluate_combo_buffs(buff_names)
+        combo_eval = evaluate_combo_buffs(buff_names, spell_ready=hand_ready)
         return {
             "buildings": store_state["buildings"],
             "store": store_state["store"],
@@ -513,6 +514,7 @@ class GodzamokComboEngine:
             "hand_spell": hand_spell,
             "spells_by_key": {spell["key"]: spell for spell in spells if spell.get("key")},
             "combo_eval": combo_eval,
+            "combo_phase": combo_eval["phase"],
             "sell_retain_floors": self._build_sell_retain_floors(snapshot, store_state["buildings"]),
         }
 
@@ -802,6 +804,13 @@ class GodzamokComboEngine:
         if state["computed_mouse_cps"] <= 0:
             return "no_click_value"
         combo_eval = state.get("combo_eval", {})
+        phase = combo_eval.get("phase")
+        if phase == "setup":
+            return "building_combo_setup"
+        if phase == "fish":
+            return "waiting_for_click_buff"
+        if phase == "execute":
+            return "combo_ready"
         if not combo_eval.get("can_spawn_click_buff") and not combo_eval.get("should_fire_godzamok"):
             return "waiting_for_combo_stack"
         if not combo_eval.get("should_fire_godzamok"):
@@ -878,7 +887,7 @@ class GodzamokComboEngine:
         buff_names = state.get("buff_names") or set()
         if buff_names & CLICK_STACK_BUFF_KEYS:
             return None
-        combo_eval = state.get("combo_eval", evaluate_combo_buffs(buff_names))
+        combo_eval = state.get("combo_eval", evaluate_combo_buffs(buff_names, spell_ready=True))
         if not combo_eval.get("can_spawn_click_buff"):
             return None
         hand = state["hand_spell"]

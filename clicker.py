@@ -69,6 +69,7 @@ from clicker_bot.features.building_store import BuildingStoreController
 from clicker_bot.features.combo_evaluator import PRODUCTION_STACK_BUFF_KEYS, VALUABLE_BUFF_KEYS, evaluate_combo_buffs
 from clicker_bot.features.garden_controller import GardenController
 from clicker_bot.features.godzamok_combo import GodzamokComboEngine
+from clicker_bot.features.santa_controller import SantaController
 from clicker_bot.features.spell_autocaster import SpellAutocaster, CRAFTY_PIXIES_BUFF
 from clicker_bot.features.stock_db import StockDatabase
 from clicker_bot.features.stock_trader import StockTrader
@@ -80,7 +81,7 @@ from clicker_bot.features.wrinkler_controller import (
     WRINKLER_MODE_SHINY_HUNT,
 )
 
-from clicker_bot.config_manager import load_config, save_config
+from clicker_bot.config_manager import load_config, save_config as save_app_config
 
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)
@@ -230,6 +231,7 @@ def save_config(config_dict):
     """Save configuration from dict."""
     from clicker_bot.config import AppConfig
     from pathlib import Path
+    current = load_config()
     game_install_dir = Path(config_dict["game_install_dir"]) if config_dict.get("game_install_dir") else None
     if game_install_dir is not None:
         # Convert to absolute path for consistency across working directory changes
@@ -238,13 +240,32 @@ def save_config(config_dict):
         game_install_dir=game_install_dir,
         auto_launch_game=config_dict.get("auto_launch_game", False),
         register_hotkeys=config_dict.get("register_hotkeys", True),
+        use_qt_hud=current.use_qt_hud,
+        main_cookie_clicking_enabled=current.main_cookie_clicking_enabled,
+        shimmer_autoclick_enabled=current.shimmer_autoclick_enabled,
+        wrath_cookie_clicking_enabled=current.wrath_cookie_clicking_enabled,
+        stock_trading_enabled=current.stock_trading_enabled,
+        lucky_reserve_enabled=current.lucky_reserve_enabled,
+        building_autobuy_enabled=current.building_autobuy_enabled,
+        upgrade_autobuy_enabled=current.upgrade_autobuy_enabled,
+        ascension_prep_enabled=current.ascension_prep_enabled,
+        garden_automation_enabled=current.garden_automation_enabled,
+        upgrade_horizon_seconds=current.upgrade_horizon_seconds,
+        building_horizon_seconds=current.building_horizon_seconds,
+        wrinkler_mode=current.wrinkler_mode,
+        building_caps=current.building_caps,
+        ignored_building_caps=current.ignored_building_caps,
     )
-    # Use the imported save_config from config_manager
-    from clicker_bot.config_manager import save_config as save_config_to_file
-    save_config_to_file(config)
+    save_app_config(config)
     # Update paths if game install dir changed
     if game_install_dir is not None:
         update_paths_from_install_dir(game_install_dir)
+
+
+APP_CONFIG = load_config()
+UPGRADE_AFFORD_HORIZON_SECONDS = APP_CONFIG.upgrade_horizon_seconds
+if APP_CONFIG.game_install_dir is not None:
+    update_paths_from_install_dir(APP_CONFIG.game_install_dir)
 
 
 class HudBufferHandler(logging.Handler):
@@ -347,25 +368,30 @@ last_lump_action = 0.0
 post_upgrade_wrinkler_cooldown_until = 0.0
 last_ui_open_action = {}
 ui_owner_lock = {"owner": None, "until": 0.0}
-building_autobuy_enabled = ENABLE_BUILDING_AUTOBUY
-stock_trading_enabled = ENABLE_STOCK_TRADING
-lucky_reserve_enabled = False
-upgrade_autobuy_enabled = True
-ascension_prep_enabled = False
-garden_automation_enabled = ENABLE_GARDEN_AUTOMATION
-main_cookie_clicking_enabled = ENABLE_MAIN_COOKIE_CLICKING
-shimmer_autoclick_enabled = ENABLE_SHIMMER_AUTOCLICK
-wrath_cookie_clicking_enabled = ENABLE_WRATH_COOKIE_CLICKING
+building_autobuy_enabled = APP_CONFIG.building_autobuy_enabled
+stock_trading_enabled = APP_CONFIG.stock_trading_enabled
+lucky_reserve_enabled = APP_CONFIG.lucky_reserve_enabled
+upgrade_autobuy_enabled = APP_CONFIG.upgrade_autobuy_enabled
+ascension_prep_enabled = APP_CONFIG.ascension_prep_enabled
+garden_automation_enabled = APP_CONFIG.garden_automation_enabled
+main_cookie_clicking_enabled = APP_CONFIG.main_cookie_clicking_enabled
+shimmer_autoclick_enabled = APP_CONFIG.shimmer_autoclick_enabled
+wrath_cookie_clicking_enabled = APP_CONFIG.wrath_cookie_clicking_enabled
 stock_db = StockDatabase(DB_PATH, log)
 stock_trader = StockTrader(log, stock_db)
-building_autobuyer = BuildingAutobuyer(log)
+building_autobuyer = BuildingAutobuyer(log, payback_horizon_seconds=APP_CONFIG.building_horizon_seconds)
+for _building_name, _building_cap in APP_CONFIG.building_caps.items():
+    building_autobuyer.set_building_cap(_building_name, _building_cap)
+for _building_name in APP_CONFIG.ignored_building_caps:
+    building_autobuyer.set_building_cap_ignored(_building_name, True)
 building_store = BuildingStoreController()
 upgrade_store = UpgradeStoreController()
 ascension_prep = AscensionPrepController(log)
 godzamok_combo = GodzamokComboEngine(log, MAIN_CLICK_INTERVAL)
 spell_autocaster = SpellAutocaster(log)
-wrinkler_controller = WrinklerController(log, mode=WRINKLER_MODE)
+wrinkler_controller = WrinklerController(log, mode=APP_CONFIG.wrinkler_mode)
 garden_controller = GardenController(log)
+santa_controller = SantaController(log)
 overlay_event_emitter = OverlayEventEmitter(
     enabled=os.environ.get("COOKIE_BIDEN_OVERLAY_DISABLED") != "1",
     log=log,
@@ -398,18 +424,18 @@ runtime_store = RuntimeStore(
     RuntimeConfig(
         hud_recent_events=HUD_RECENT_EVENTS,
         gameplay_feed_size=120,
-        upgrade_horizon_seconds=UPGRADE_AFFORD_HORIZON_SECONDS,
+        upgrade_horizon_seconds=APP_CONFIG.upgrade_horizon_seconds,
         building_horizon_seconds=building_autobuyer.payback_horizon_seconds,
-        wrinkler_mode=WRINKLER_MODE,
-        stock_trading_enabled=ENABLE_STOCK_TRADING,
-        lucky_reserve_enabled=False,
-        building_autobuy_enabled=ENABLE_BUILDING_AUTOBUY,
-        upgrade_autobuy_enabled=True,
-        ascension_prep_enabled=False,
-        garden_automation_enabled=ENABLE_GARDEN_AUTOMATION,
-        main_cookie_clicking_enabled=ENABLE_MAIN_COOKIE_CLICKING,
-        shimmer_autoclick_enabled=ENABLE_SHIMMER_AUTOCLICK,
-        wrath_cookie_clicking_enabled=ENABLE_WRATH_COOKIE_CLICKING,
+        wrinkler_mode=APP_CONFIG.wrinkler_mode,
+        stock_trading_enabled=stock_trading_enabled,
+        lucky_reserve_enabled=lucky_reserve_enabled,
+        building_autobuy_enabled=building_autobuy_enabled,
+        upgrade_autobuy_enabled=upgrade_autobuy_enabled,
+        ascension_prep_enabled=ascension_prep_enabled,
+        garden_automation_enabled=garden_automation_enabled,
+        main_cookie_clicking_enabled=main_cookie_clicking_enabled,
+        shimmer_autoclick_enabled=shimmer_autoclick_enabled,
+        wrath_cookie_clicking_enabled=wrath_cookie_clicking_enabled,
     )
 )
 runtime_lock = runtime_store.lock
@@ -435,6 +461,35 @@ root_logger.addHandler(hud_handler)
 
 def _set_runtime(**kwargs):
     runtime_store.update(**kwargs)
+
+
+def _persist_hud_settings():
+    stats = building_autobuyer.get_runtime_stats()
+    current = load_config()
+    config = current.__class__(
+        register_hotkeys=current.register_hotkeys,
+        game_install_dir=current.game_install_dir,
+        auto_launch_game=current.auto_launch_game,
+        use_qt_hud=current.use_qt_hud,
+        main_cookie_clicking_enabled=main_cookie_clicking_enabled,
+        shimmer_autoclick_enabled=shimmer_autoclick_enabled,
+        wrath_cookie_clicking_enabled=wrath_cookie_clicking_enabled,
+        stock_trading_enabled=stock_trading_enabled,
+        lucky_reserve_enabled=lucky_reserve_enabled,
+        building_autobuy_enabled=building_autobuy_enabled,
+        upgrade_autobuy_enabled=upgrade_autobuy_enabled,
+        ascension_prep_enabled=ascension_prep_enabled,
+        garden_automation_enabled=garden_automation_enabled,
+        upgrade_horizon_seconds=UPGRADE_AFFORD_HORIZON_SECONDS,
+        building_horizon_seconds=float(stats.get("payback_horizon_seconds") or building_autobuyer.payback_horizon_seconds),
+        wrinkler_mode=wrinkler_controller.mode,
+        building_caps=stats.get("building_caps") or {},
+        ignored_building_caps=tuple(stats.get("ignored_building_caps") or ()),
+    )
+    try:
+        save_app_config(config)
+    except Exception as exc:
+        log.warning(f"Failed to persist HUD settings: {exc}")
 
 
 def _infer_feed_category(message):
@@ -1607,6 +1662,7 @@ def start_dashboard(use_qt_hud: bool = True):
         set_building_cap=set_building_cap,
         set_building_cap_ignored=set_building_cap_ignored,
         cycle_wrinkler_mode=cycle_wrinkler_mode,
+        cycle_garden_mode=cycle_garden_mode,
         exit_program=exit_program,
         dump_shimmer_data=_dump_shimmer_seed_history,
         get_config=get_config,
@@ -2928,6 +2984,8 @@ def _get_bot_controls():
                 WRINKLER_MODE_SEASONAL_FARM,
                 WRINKLER_MODE_SHINY_HUNT,
             ),
+            garden_controller=garden_controller,
+            persist_settings=_persist_hud_settings,
         )
     return bot_controls
 
@@ -3061,6 +3119,7 @@ def _get_dom_loop_services():
             garden_controller=garden_controller,
             wrinkler_controller=wrinkler_controller,
             ascension_controller=ascension_prep,
+            santa_controller=santa_controller,
             stock_trader=stock_trader,
             building_autobuyer=building_autobuyer,
             lump_action_cooldown=LUMP_ACTION_COOLDOWN,
@@ -3214,6 +3273,9 @@ def toggle_stock_trading(e=None, source="hotkey"):
 
 def toggle_garden_automation(e=None, source="hud_button"):
     _get_bot_controls().toggle_garden_automation(source=source)
+
+def cycle_garden_mode(e=None):
+    _get_bot_controls().cycle_garden_mode()
 
 
 def cycle_wrinkler_mode(e=None):

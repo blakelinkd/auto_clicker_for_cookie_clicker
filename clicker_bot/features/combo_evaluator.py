@@ -19,7 +19,7 @@ MAJOR_PRODUCTION_BUFF_KEYS = {
 VALUABLE_BUFF_KEYS = CLICK_STACK_BUFF_KEYS | PRODUCTION_STACK_BUFF_KEYS
 
 
-def evaluate_combo_buffs(buff_names):
+def evaluate_combo_buffs(buff_names, *, spell_ready=False):
     names = {name for name in (buff_names or set()) if name}
     click_buffs = names & CLICK_STACK_BUFF_KEYS
     production_buffs = names & PRODUCTION_STACK_BUFF_KEYS
@@ -28,9 +28,7 @@ def evaluate_combo_buffs(buff_names):
     can_spawn_click_buff = bool(production_buffs) and (
         len(production_buffs) >= 2 or bool(major_production_buffs)
     )
-    should_fire_godzamok = bool(click_buffs) and (
-        len(production_buffs) >= 2 or bool(major_production_buffs)
-    )
+    should_fire_godzamok = bool(click_buffs) and bool(production_buffs)
 
     if should_fire_godzamok:
         stage = "execute_click_combo"
@@ -41,6 +39,15 @@ def evaluate_combo_buffs(buff_names):
     else:
         stage = "idle"
 
+    if should_fire_godzamok:
+        phase = "execute"
+    elif production_buffs and (bool(spell_ready) or can_spawn_click_buff):
+        phase = "fish"
+    elif production_buffs:
+        phase = "setup"
+    else:
+        phase = "idle"
+
     return {
         "buff_names": names,
         "click_buffs": click_buffs,
@@ -49,4 +56,5 @@ def evaluate_combo_buffs(buff_names):
         "can_spawn_click_buff": can_spawn_click_buff,
         "should_fire_godzamok": should_fire_godzamok,
         "stage": stage,
+        "phase": phase,
     }

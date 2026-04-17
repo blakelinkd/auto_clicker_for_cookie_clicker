@@ -121,6 +121,7 @@ class GodzamokSellFloorTests(unittest.TestCase):
         self.assertEqual(action.kind, "open_temple")
         self.assertEqual(action.detail, "open_temple")
         self.assertEqual(diag["reason"], "temple_closed_can_open")
+        self.assertEqual(diag["combo_phase"], "idle")
 
 
 if __name__ == "__main__":

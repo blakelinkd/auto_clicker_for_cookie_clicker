@@ -1600,6 +1600,25 @@ Game.registerMod("shimmer bridge", {
 			};
 		};
 
+		const getSantaData = () => {
+			if (!Game || !Array.isArray(Game.santaLevels)) return null;
+			const santaLevel = typeof Game.santaLevel === "number" ? Game.santaLevel : 0;
+			const maxLevel = typeof Game.santaMax === "number" ? Game.santaMax : Game.santaLevels.length - 1;
+			const currentLevel = Game.santaLevels[santaLevel] || null;
+			const nextLevel = santaLevel < maxLevel ? Game.santaLevels[santaLevel + 1] : null;
+			const clickTarget = getRect(findFirstElement(["#santaClick"]));
+			const selectTarget = getRect(findFirstElement(["#santaLevel"]));
+			return {
+				unlocked: !!(Game.Has && Game.Has("A festive hat")),
+				level: santaLevel,
+				maxLevel: maxLevel,
+				currentName: currentLevel,
+				nextName: nextLevel,
+				clickTarget: clickTarget,
+				selectTarget: selectTarget,
+			};
+		};
+
 		const getStoreData = () => {
 			return {
 				buyMode: typeof Game.buyMode === "number" ? Game.buyMode : null,
@@ -2013,6 +2032,7 @@ Game.registerMod("shimmer bridge", {
 				lump: getLumpData(),
 				notes: getNotesData(),
 				dragon: getDragonData(),
+				santa: getSantaData(),
 				ascension: getAscensionData(),
 				goldenCookie: getGoldenCookieData(),
 				buffs: getActiveBuffs(),

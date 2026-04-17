@@ -1597,7 +1597,10 @@ class DomShimmerHandlerTests(unittest.TestCase):
 
         self.assertTrue(first.handled)
         self.assertTrue(second.handled)
-        self.assertEqual(calls["overlay"], [(shimmer, {"mode": "clicked_preview", "clicked_at": 10.0})])
+        self.assertEqual(calls["overlay"], [
+            (shimmer, {"mode": "clicked_preview", "clicked_at": 10.0}),
+            (shimmer, {"mode": "clicked", "clicked_at": 15.0}),
+        ])
         self.assertEqual(calls["clicks"], [(140, 250, {"hold": 0.035})])
 
     def test_process_clicks_multiple_shimmers_without_overlay_delay(self):
@@ -1636,6 +1639,42 @@ class DomShimmerHandlerTests(unittest.TestCase):
         self.assertTrue(result.handled)
         self.assertEqual(calls["clicks"], [(140, 250, {"hold": 0.035})])
         self.assertEqual(calls["overlay"], [(first_shimmer, {"mode": "clicked", "clicked_at": 15.0})])
+
+    def test_process_emits_overlay_for_skipped_wrath_cookie(self):
+        shimmer = {
+            "id": 12,
+            "type": "golden",
+            "wrath": True,
+            "client_x": 40,
+            "client_y": 50,
+            "screen_x": 140,
+            "screen_y": 250,
+            "life": 10,
+            "dur": 20,
+            "target_norm_x": 0.25,
+            "target_norm_y": 0.50,
+        }
+        handler, calls = self._handler(
+            shimmer_first_seen={12: 8.0},
+            should_skip_wrath_shimmer=lambda buffs, combo_diag=None: True,
+        )
+
+        result = handler.process(
+            DomShimmerContext(
+                snapshot={},
+                shimmers=[shimmer],
+                buffs=[],
+                now=10.0,
+                pause_value_actions_during_clot=False,
+                shimmer_autoclick_enabled=True,
+                last_seen_golden_decision=None,
+                suppress_main_click_until=0.0,
+            )
+        )
+
+        self.assertFalse(result.handled)
+        self.assertEqual(calls["clicks"], [])
+        self.assertEqual(calls["overlay"], [(shimmer, {"mode": "wrath_skipped_preview", "clicked_at": 10.0})])
 
     def test_process_clicks_fortune_without_full_shimmer_delay(self):
         fortune = {
@@ -1721,6 +1760,7 @@ class DomLoopStageRunnerTests(unittest.TestCase):
             execute_upgrade_action=lambda **kwargs: None,
             execute_wrinkler_action=lambda *args: None,
             execute_dragon_action=lambda *args: None,
+            execute_santa_action=lambda *args: None,
             execute_ascension_prep_action=lambda *args: None,
             execute_trade_action=lambda *args: None,
             execute_building_action=lambda **kwargs: None,
@@ -1759,6 +1799,7 @@ class DomLoopStageRunnerTests(unittest.TestCase):
             "garden_controller": SimpleNamespace(get_action=lambda *args, **kwargs: None),
             "wrinkler_controller": _Recorder(),
             "ascension_controller": _Recorder(),
+            "santa_controller": SimpleNamespace(get_action=lambda *args, **kwargs: None, record_action=lambda action: None),
             "stock_trader": _Recorder(),
             "building_autobuyer": _Recorder(),
             "log": _LogStub(),
@@ -1902,6 +1943,7 @@ class DomLoopStageRunnerTests(unittest.TestCase):
                 execute_upgrade_action=lambda **kwargs: None,
                 execute_wrinkler_action=lambda *args: None,
                 execute_dragon_action=lambda *args: None,
+                execute_santa_action=lambda *args: None,
                 execute_ascension_prep_action=lambda *args: None,
                 execute_trade_action=lambda *args: None,
                 execute_building_action=lambda **kwargs: 44.0,
@@ -1964,6 +2006,91 @@ class DomLoopStageRunnerTests(unittest.TestCase):
         self.assertTrue(outcome.handled)
         self.assertEqual(outcome.updates["last_building_action"], 44.0)
         self.assertEqual(update_calls[0][1], 10.0)
+
+    def test_run_late_executes_santa_stage(self):
+        santa_calls = []
+        runner = self._runner(
+            santa_controller=SimpleNamespace(
+                get_action=lambda snapshot, to_screen_point, now=None: SimpleNamespace(
+                    kind="click_santa",
+                    screen_x=11,
+                    screen_y=22,
+                    level=0,
+                    max_level=14,
+                    target_level=14,
+                    current_name="Festive test tube",
+                    next_name="Festive ornament",
+                    reason="level_santa",
+                )
+            ),
+            action_executor=SimpleNamespace(
+                execute_upgrade_action=lambda **kwargs: None,
+                execute_wrinkler_action=lambda *args: None,
+                execute_dragon_action=lambda *args: None,
+                execute_santa_action=lambda santa_action, now, action_started, santa_recorder: santa_calls.append(
+                    (santa_action.current_name, santa_action.next_name, now)
+                ) or 55.0,
+                execute_ascension_prep_action=lambda *args: None,
+                execute_trade_action=lambda *args: None,
+                execute_building_action=lambda **kwargs: None,
+                execute_minigame_store_action=lambda owner, store_action, now, action_started: False,
+            ),
+        )
+
+        outcome = runner.run_late(
+            DomLoopLateStageContext(
+                snapshot={"santa": {"level": 0, "maxLevel": 14, "unlocked": True}},
+                shimmers=[],
+                upgrade_diag={},
+                dragon_diag={},
+                combo_diag={},
+                spell_diag={},
+                purchase_goal=None,
+                stock_buy_controls={"allow_buy_actions": True, "buy_reserve_cookies": 0.0},
+                stock_management_active=False,
+                bank_diag={},
+                garden_diag={},
+                building_diag={},
+                building_cookie_reserve=0.0,
+                garden_cookie_reserve=0.0,
+                lucky_cookie_reserve=0.0,
+                global_cookie_reserve=0.0,
+                pause_non_click_actions=False,
+                allow_non_click_actions_during_pause=False,
+                pause_stock_trading=False,
+                pause_reasons=(),
+                upgrade_autobuy_enabled=False,
+                ascension_prep_enabled=False,
+                stock_trading_enabled=False,
+                building_autobuy_enabled=False,
+                combo_pending=False,
+                combo_phase="idle",
+                now=10.0,
+                action_started=5.0,
+                upgrade_action=None,
+                upgrade_store_action=None,
+                upgrade_signature=None,
+                upgrade_blocked_until=0.0,
+                upgrade_signature_blocked=False,
+                cookies_after_upgrade_reserve=True,
+                defer_stock_for_upgrade_live=False,
+                last_upgrade_action=0.0,
+                last_upgrade_skip_signature=None,
+                last_upgrade_focus_signature=None,
+                last_upgrade_focus_at=0.0,
+                last_upgrade_focus_point=None,
+                last_wrinkler_action=0.0,
+                post_upgrade_wrinkler_cooldown_until=0.0,
+                last_dragon_action=0.0,
+                last_building_action=0.0,
+                last_trade_action=0.0,
+                upgrade_attempt_tracker={"attempts": 0},
+                building_attempt_tracker={"attempts": 0},
+            )
+        )
+
+        self.assertTrue(outcome.handled)
+        self.assertEqual(santa_calls, [("Festive test tube", "Festive ornament", 10.0)])
 
 
 if __name__ == "__main__":

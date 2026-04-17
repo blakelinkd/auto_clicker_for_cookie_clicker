@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-17";
+  const assetVersion = "snake-heat-18";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const sounds = {
@@ -26,6 +26,8 @@
   const enrageSizeGrowthPerSecond = 1.12;
   const enrageVisualEaseMs = 3000;
   const enrageMeterMaxBidens = 15;
+  const babyGrandmaDrawScale = 0.62;
+  const babyGrandmaSpeedMultiplier = 0.84;
   const snake = {
     mode: "heat",
     segments: [],
@@ -51,6 +53,7 @@
     heatStuckSince: 0,
     heatRecoveryUntil: 0,
   };
+  const babyGrandmaSnakes = [];
   const combatLog = [];
   let lastDurgularYell = 0;
   let bidenSpawnCount = 0;
@@ -129,7 +132,10 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     refreshBidenCells();
     if (snake.mode === "heat") {
-      clampHeatSegmentsToViewport();
+      clampHeatSegmentsToViewport(snake);
+      for (const baby of babyGrandmaSnakes) {
+        clampHeatSegmentsToViewport(baby);
+      }
       return;
     }
     if (snake.segments.length === 0 || snake.segments.some((segment) => !isInBounds(segment))) {
@@ -157,6 +163,7 @@
     snake.heatStuckSample = null;
     snake.heatStuckSince = 0;
     snake.heatRecoveryUntil = 0;
+    babyGrandmaSnakes.length = 0;
   }
 
   function cloneSegments(segments) {
@@ -196,9 +203,9 @@
     return segments.map((segment) => cellToPixel(segment));
   }
 
-  function clampHeatSegmentsToViewport() {
+  function clampHeatSegmentsToViewport(heatSnake = snake) {
     const margin = snakeHeadDrawSize / 2;
-    for (const segment of snake.heatSegments) {
+    for (const segment of heatSnake.heatSegments) {
       const clamped = clampHeatPointToViewport(segment);
       segment.x = clamped.x;
       segment.y = clamped.y;
@@ -421,7 +428,36 @@
     snake.enrageEndedAt = now;
     snake.enrageStart = 0;
     snake.enrageEatenCount = 0;
+    spawnBabyGrandmaSnake(now);
     addCombatLogLine("grandma", "Enrage spent.", now);
+  }
+
+  function spawnBabyGrandmaSnake(now) {
+    const parentHead = snake.heatSegments[0] || cellToPixel({
+      x: Math.floor(gridWidth() / 2),
+      y: Math.floor(gridHeight() / 2),
+    });
+    const angle = Math.random() * Math.PI * 2;
+    const distance = cellSize * (1.2 + Math.random() * 1.4);
+    const head = clampHeatPointToViewport({
+      x: parentHead.x + Math.cos(angle) * distance,
+      y: parentHead.y + Math.sin(angle) * distance,
+    });
+    const direction = normalizeVector({
+      x: Math.cos(angle + Math.PI / 2),
+      y: Math.sin(angle + Math.PI / 2),
+    });
+    babyGrandmaSnakes.push({
+      heatSegments: [head],
+      heatDirection: direction,
+      lastFrame: now,
+      heatTargeting: false,
+      heatStuckSample: null,
+      heatStuckSince: 0,
+      heatRecoveryUntil: 0,
+      spawnedAt: now,
+    });
+    addCombatLogLine("grandma", "A baby Grandma joins the hunt.", now + 150);
   }
 
   function enrageMovementMultiplier(now) {
@@ -562,6 +598,16 @@
     updateEnrageState(now);
     enterHeatSeekingMode(now);
     advanceHeatSeeking(now);
+    advanceBabyGrandmaSnakes(now);
+  }
+
+  function advanceBabyGrandmaSnakes(now) {
+    for (const baby of babyGrandmaSnakes) {
+      advanceHeatSnake(baby, now, {
+        announceTargeting: false,
+        speedMultiplier: babyGrandmaSpeedMultiplier,
+      });
+    }
   }
 
   function advanceGridSnake(now) {
@@ -608,94 +654,101 @@
   }
 
   function advanceHeatSeeking(now) {
-    if (snake.heatSegments.length === 0) {
-      snake.heatSegments = gridSegmentsToPixels(interpolatedSegments(now));
+    advanceHeatSnake(snake, now, {
+      announceTargeting: true,
+      speedMultiplier: 1,
+    });
+  }
+
+  function advanceHeatSnake(heatSnake, now, options = {}) {
+    if (heatSnake.heatSegments.length === 0) {
+      heatSnake.heatSegments = gridSegmentsToPixels(interpolatedSegments(now));
     }
 
-    const dt = Math.min(80, Math.max(0, now - (snake.lastFrame || now)));
-    snake.lastFrame = now;
-    const head = snake.heatSegments[0];
+    const dt = Math.min(80, Math.max(0, now - (heatSnake.lastFrame || now)));
+    heatSnake.lastFrame = now;
+    const head = heatSnake.heatSegments[0];
     const target = nearestHeatTarget(head);
-    if (target && !snake.heatTargeting) {
+    if (target && !heatSnake.heatTargeting && options.announceTargeting) {
       addCombatLogLine("grandma", "Heat seeking mode engage!", now);
     }
-    snake.heatTargeting = Boolean(target);
-    const speed = (cellSize / snakeTickMs) * enrageMovementMultiplier(now);
+    heatSnake.heatTargeting = Boolean(target);
+    const speed = (cellSize / snakeTickMs) * enrageMovementMultiplier(now) * (options.speedMultiplier || 1);
     const maxStep = speed * dt;
-    const sizes = segmentSizeMultipliers(snake.heatSegments.length);
+    const sizes = segmentSizeMultipliers(heatSnake.heatSegments.length);
     const targetPoint = target ? bidenCenter(target) : null;
     let desired = target
       ? vectorToward(head, bidenCenter(target))
-      : snake.heatDirection;
+      : heatSnake.heatDirection;
 
     if (!target) {
       desired = bounceHeatDirection(head, desired);
     }
     desired = normalizeVector(addVectors(desired, wallEscapeVector(head, targetPoint)));
-    if (snake.heatRecoveryUntil > now) {
+    if (heatSnake.heatRecoveryUntil > now) {
       desired = normalizeVector(addVectors(desired, scaleVector(inwardWallVector(head), 4.5)));
     }
-    desired = normalizeVector(addVectors(desired, heatTailAvoidanceVector(head, desired, maxStep, sizes)));
+    desired = normalizeVector(addVectors(desired, heatTailAvoidanceVector(head, desired, maxStep, sizes, heatSnake)));
 
     const previousHead = { x: head.x, y: head.y };
-    const chosenMove = chooseHeatMove(head, desired, maxStep, sizes, targetPoint);
+    const chosenMove = chooseHeatMove(head, desired, maxStep, sizes, targetPoint, heatSnake);
     head.x = chosenMove.x;
     head.y = chosenMove.y;
-    snake.heatDirection = chosenMove.direction;
-    clampHeatSegmentsToViewport();
-    if (heatHeadCollidesWithTail(head, sizes)) {
-      const sidestep = chooseHeatSidestep(previousHead, desired, maxStep, sizes, targetPoint);
+    heatSnake.heatDirection = chosenMove.direction;
+    clampHeatSegmentsToViewport(heatSnake);
+    if (heatHeadCollidesWithTail(head, sizes, heatSnake)) {
+      const sidestep = chooseHeatSidestep(previousHead, desired, maxStep, sizes, targetPoint, heatSnake);
       head.x = sidestep.x;
       head.y = sidestep.y;
-      snake.heatDirection = sidestep.direction;
-      clampHeatSegmentsToViewport();
+      heatSnake.heatDirection = sidestep.direction;
+      clampHeatSegmentsToViewport(heatSnake);
     }
-    if (updateHeatStuckState(previousHead, head, now) || snake.heatRecoveryUntil > now) {
-      applyHeatStuckRecovery(head, sizes, maxStep, now);
+    if (updateHeatStuckState(previousHead, head, now, heatSnake) || heatSnake.heatRecoveryUntil > now) {
+      applyHeatStuckRecovery(head, sizes, maxStep, now, heatSnake);
     }
 
     if (target && pixelDistance(head, bidenCenter(target)) <= cellSize * 0.55) {
-      const tail = snake.heatSegments[snake.heatSegments.length - 1] || head;
-      snake.heatSegments.push({ x: tail.x, y: tail.y });
+      const tail = heatSnake.heatSegments[heatSnake.heatSegments.length - 1] || head;
+      heatSnake.heatSegments.push({ x: tail.x, y: tail.y });
       handleBidenEaten(target, now);
     }
 
-    relaxHeatTail();
+    relaxHeatTail(heatSnake);
   }
 
-  function updateHeatStuckState(previousHead, head, now) {
+  function updateHeatStuckState(previousHead, head, now, heatSnake = snake) {
     if (heatWallContactCount(head) === 0) {
-      snake.heatStuckSample = null;
-      snake.heatStuckSince = 0;
+      heatSnake.heatStuckSample = null;
+      heatSnake.heatStuckSince = 0;
       return false;
     }
 
     const movedThisFrame = pixelDistance(previousHead, head);
     if (movedThisFrame > cellSize * 0.18) {
-      snake.heatStuckSample = { x: head.x, y: head.y, at: now };
-      snake.heatStuckSince = 0;
+      heatSnake.heatStuckSample = { x: head.x, y: head.y, at: now };
+      heatSnake.heatStuckSince = 0;
       return false;
     }
 
-    if (!snake.heatStuckSample || pixelDistance(snake.heatStuckSample, head) > cellSize * 0.45) {
-      snake.heatStuckSample = { x: head.x, y: head.y, at: now };
-      snake.heatStuckSince = 0;
+    if (!heatSnake.heatStuckSample || pixelDistance(heatSnake.heatStuckSample, head) > cellSize * 0.45) {
+      heatSnake.heatStuckSample = { x: head.x, y: head.y, at: now };
+      heatSnake.heatStuckSince = 0;
       return false;
     }
 
-    const pinnedMs = now - snake.heatStuckSample.at;
+    const pinnedMs = now - heatSnake.heatStuckSample.at;
     if (pinnedMs < 650) return false;
-    if (!snake.heatStuckSince) snake.heatStuckSince = now;
-    snake.heatRecoveryUntil = Math.max(snake.heatRecoveryUntil, now + 900);
-    snake.heatStuckSample = { x: head.x, y: head.y, at: now };
+    if (!heatSnake.heatStuckSince) heatSnake.heatStuckSince = now;
+    heatSnake.heatRecoveryUntil = Math.max(heatSnake.heatRecoveryUntil, now + 900);
+    heatSnake.heatStuckSample = { x: head.x, y: head.y, at: now };
     return true;
   }
 
-  function applyHeatStuckRecovery(head, sizes, maxStep, now) {
+  function applyHeatStuckRecovery(head, sizes, maxStep, now, heatSnake = snake) {
     const inward = inwardWallVector(head);
     if (Math.abs(inward.x) <= 0.001 && Math.abs(inward.y) <= 0.001) return;
 
-    const recoveryProgress = Math.max(0, Math.min(1, (snake.heatRecoveryUntil - now) / 900));
+    const recoveryProgress = Math.max(0, Math.min(1, (heatSnake.heatRecoveryUntil - now) / 900));
     const headStep = Math.max(maxStep, cellSize * (0.28 + recoveryProgress * 0.16));
     const recoveredHead = clampHeatPointToViewport({
       x: head.x + inward.x * headStep,
@@ -703,12 +756,12 @@
     });
     head.x = recoveredHead.x;
     head.y = recoveredHead.y;
-    snake.heatDirection = inward;
+    heatSnake.heatDirection = inward;
 
-    for (let i = 1; i < snake.heatSegments.length; i += 1) {
-      const segment = snake.heatSegments[i];
+    for (let i = 1; i < heatSnake.heatSegments.length; i += 1) {
+      const segment = heatSnake.heatSegments[i];
       const awayFromHead = vectorAwayFrom(head, segment, inward);
-      const falloff = Math.max(0.2, 1 - (i / Math.max(2, snake.heatSegments.length)));
+      const falloff = Math.max(0.2, 1 - (i / Math.max(2, heatSnake.heatSegments.length)));
       const push = cellSize * 0.42 * falloff;
       const moved = clampHeatPointToViewport({
         x: segment.x + inward.x * push + awayFromHead.x * push * 0.85,
@@ -717,8 +770,8 @@
       segment.x = moved.x;
       segment.y = moved.y;
     }
-    enforceSegmentCollisionGaps(snake.heatSegments, sizes, 1);
-    clampHeatSegmentsToViewport();
+    enforceSegmentCollisionGaps(heatSnake.heatSegments, sizes, 1);
+    clampHeatSegmentsToViewport(heatSnake);
   }
 
   function nearestHeatTarget(head) {
@@ -851,7 +904,7 @@
     return pressure;
   }
 
-  function heatTailAvoidanceVector(head, desired, maxStep, sizes) {
+  function heatTailAvoidanceVector(head, desired, maxStep, sizes, heatSnake = snake) {
     const predicted = {
       x: head.x + desired.x * maxStep,
       y: head.y + desired.y * maxStep,
@@ -860,8 +913,8 @@
     const avoidanceRange = headRadius + snakeBodyDrawSize * 0.85;
     let avoid = { x: 0, y: 0 };
 
-    for (let i = 2; i < snake.heatSegments.length; i += 1) {
-      const segment = snake.heatSegments[i];
+    for (let i = 2; i < heatSnake.heatSegments.length; i += 1) {
+      const segment = heatSnake.heatSegments[i];
       const requiredDistance = segmentCollisionSpacing(0, i, sizes);
       const dx = predicted.x - segment.x;
       const dy = predicted.y - segment.y;
@@ -878,20 +931,20 @@
     return avoid;
   }
 
-  function heatHeadCollidesWithTail(head, sizes) {
-    for (let i = 2; i < snake.heatSegments.length; i += 1) {
-      if (pixelDistance(head, snake.heatSegments[i]) < segmentCollisionSpacing(0, i, sizes)) {
+  function heatHeadCollidesWithTail(head, sizes, heatSnake = snake) {
+    for (let i = 2; i < heatSnake.heatSegments.length; i += 1) {
+      if (pixelDistance(head, heatSnake.heatSegments[i]) < segmentCollisionSpacing(0, i, sizes)) {
         return true;
       }
     }
     return false;
   }
 
-  function chooseHeatSidestep(previousHead, desired, maxStep, sizes, targetPoint) {
-    return chooseHeatMove(previousHead, desired, maxStep, sizes, targetPoint);
+  function chooseHeatSidestep(previousHead, desired, maxStep, sizes, targetPoint, heatSnake = snake) {
+    return chooseHeatMove(previousHead, desired, maxStep, sizes, targetPoint, heatSnake);
   }
 
-  function chooseHeatMove(origin, desired, maxStep, sizes, targetPoint) {
+  function chooseHeatMove(origin, desired, maxStep, sizes, targetPoint, heatSnake = snake) {
     if (maxStep <= 0.001) {
       return { x: origin.x, y: origin.y, direction: normalizeVector(desired) };
     }
@@ -904,7 +957,7 @@
         y: origin.y + direction.y * maxStep,
       });
       const actualDirection = actualHeatMoveDirection(origin, point, direction);
-      const score = scoreHeatMove(origin, point, actualDirection, baseDirection, sizes, targetPoint);
+      const score = scoreHeatMove(origin, point, actualDirection, baseDirection, sizes, targetPoint, heatSnake);
       const candidate = { x: point.x, y: point.y, direction: actualDirection, score };
       if (!best || candidate.score > best.score) {
         best = candidate;
@@ -958,8 +1011,8 @@
     return fallbackDirection;
   }
 
-  function scoreHeatMove(origin, point, direction, baseDirection, sizes, targetPoint) {
-    const clearance = heatTailClearance(point, sizes);
+  function scoreHeatMove(origin, point, direction, baseDirection, sizes, targetPoint, heatSnake = snake) {
+    const clearance = heatTailClearance(point, sizes, heatSnake);
     const requiredClearance = minHeatTailSpacing(sizes);
     const collisionPenalty = clearance < requiredClearance ? (requiredClearance - clearance) * 80 : 0;
     const wallMargin = heatWallMargin(point);
@@ -979,10 +1032,10 @@
     return Math.sqrt(escape.x * escape.x + escape.y * escape.y);
   }
 
-  function heatTailClearance(point, sizes) {
+  function heatTailClearance(point, sizes, heatSnake = snake) {
     let clearance = Infinity;
-    for (let i = 2; i < snake.heatSegments.length; i += 1) {
-      const distance = pixelDistance(point, snake.heatSegments[i]) - segmentCollisionSpacing(0, i, sizes);
+    for (let i = 2; i < heatSnake.heatSegments.length; i += 1) {
+      const distance = pixelDistance(point, heatSnake.heatSegments[i]) - segmentCollisionSpacing(0, i, sizes);
       clearance = Math.min(clearance, distance);
     }
     return Number.isFinite(clearance) ? clearance : minHeatTailSpacing(sizes);
@@ -1007,11 +1060,11 @@
     );
   }
 
-  function relaxHeatTail() {
-    const sizes = segmentSizeMultipliers(snake.heatSegments.length);
-    for (let i = 1; i < snake.heatSegments.length; i += 1) {
-      const leader = snake.heatSegments[i - 1];
-      const follower = snake.heatSegments[i];
+  function relaxHeatTail(heatSnake = snake) {
+    const sizes = segmentSizeMultipliers(heatSnake.heatSegments.length);
+    for (let i = 1; i < heatSnake.heatSegments.length; i += 1) {
+      const leader = heatSnake.heatSegments[i - 1];
+      const follower = heatSnake.heatSegments[i];
       const spacing = segmentCollisionSpacing(i - 1, i, sizes);
       const dx = follower.x - leader.x;
       const dy = follower.y - leader.y;
@@ -1021,7 +1074,7 @@
         follower.y = leader.y + (dy / distance) * spacing;
       }
     }
-    enforceSegmentCollisionGaps(snake.heatSegments, sizes, 1);
+    enforceSegmentCollisionGaps(heatSnake.heatSegments, sizes, 1);
   }
 
   function interpolatedSegments(now) {
@@ -1109,12 +1162,19 @@
   }
 
   function drawHeatSeekingSnake(now) {
-    const sizes = segmentSizeMultipliers(snake.heatSegments.length);
-    for (let i = snake.heatSegments.length - 1; i >= 0; i -= 1) {
-      const segment = snake.heatSegments[i];
+    for (const baby of babyGrandmaSnakes) {
+      drawHeatSnakeSegments(baby.heatSegments, now, babyGrandmaDrawScale);
+    }
+    drawHeatSnakeSegments(snake.heatSegments, now, 1);
+  }
+
+  function drawHeatSnakeSegments(segments, now, drawScale) {
+    const sizes = segmentSizeMultipliers(segments.length);
+    for (let i = segments.length - 1; i >= 0; i -= 1) {
+      const segment = segments[i];
       const isHead = i === 0;
       const baseSize = isHead ? snakeHeadDrawSize : snakeBodyDrawSize;
-      const size = baseSize * sizes[i] * enrageSizeMultiplier(now);
+      const size = baseSize * sizes[i] * enrageSizeMultiplier(now) * drawScale;
       const bob = isHead ? Math.sin(now / 140) * 2 : 0;
 
       ctx.save();

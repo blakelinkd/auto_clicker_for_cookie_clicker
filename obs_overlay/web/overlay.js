@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-18";
+  const assetVersion = "snake-heat-20";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const sounds = {
@@ -28,6 +28,8 @@
   const enrageMeterMaxBidens = 15;
   const babyGrandmaDrawScale = 0.62;
   const babyGrandmaSpeedMultiplier = 0.84;
+  const bidenEatRadius = cellSize * 1.08;
+  const bidenCloseRange = cellSize * 3.2;
   const snake = {
     mode: "heat",
     segments: [],
@@ -673,6 +675,10 @@
       addCombatLogLine("grandma", "Heat seeking mode engage!", now);
     }
     heatSnake.heatTargeting = Boolean(target);
+    if (eatHeatTargetIfReached(heatSnake, head, target, now)) {
+      relaxHeatTail(heatSnake);
+      return;
+    }
     const speed = (cellSize / snakeTickMs) * enrageMovementMultiplier(now) * (options.speedMultiplier || 1);
     const maxStep = speed * dt;
     const sizes = segmentSizeMultipliers(heatSnake.heatSegments.length);
@@ -683,6 +689,9 @@
 
     if (!target) {
       desired = bounceHeatDirection(head, desired);
+    }
+    if (targetPoint) {
+      desired = normalizeVector(addVectors(desired, targetMagnetVector(head, targetPoint)));
     }
     desired = normalizeVector(addVectors(desired, wallEscapeVector(head, targetPoint)));
     if (heatSnake.heatRecoveryUntil > now) {
@@ -707,13 +716,18 @@
       applyHeatStuckRecovery(head, sizes, maxStep, now, heatSnake);
     }
 
-    if (target && pixelDistance(head, bidenCenter(target)) <= cellSize * 0.55) {
-      const tail = heatSnake.heatSegments[heatSnake.heatSegments.length - 1] || head;
-      heatSnake.heatSegments.push({ x: tail.x, y: tail.y });
-      handleBidenEaten(target, now);
-    }
+    eatHeatTargetIfReached(heatSnake, head, target, now);
 
     relaxHeatTail(heatSnake);
+  }
+
+  function eatHeatTargetIfReached(heatSnake, head, target, now) {
+    if (!target || target.beingEaten) return false;
+    if (bidenHitDistance(head, target) > bidenEatRadius) return false;
+    const tail = heatSnake.heatSegments[heatSnake.heatSegments.length - 1] || head;
+    heatSnake.heatSegments.push({ x: tail.x, y: tail.y });
+    handleBidenEaten(target, now);
+    return true;
   }
 
   function updateHeatStuckState(previousHead, head, now, heatSnake = snake) {
@@ -787,6 +801,18 @@
       }
     }
     return best;
+  }
+
+  function bidenHitDistance(point, spawn) {
+    return pixelDistance(point, bidenCenter(spawn));
+  }
+
+  function targetMagnetVector(head, targetPoint) {
+    const distance = pixelDistance(head, targetPoint);
+    if (distance >= bidenCloseRange) return { x: 0, y: 0 };
+    const pull = vectorToward(head, targetPoint);
+    const closeness = 1 - (distance / bidenCloseRange);
+    return scaleVector(pull, 0.8 + closeness * 2.8);
   }
 
   function vectorToward(from, to) {
@@ -1018,13 +1044,17 @@
     const wallMargin = heatWallMargin(point);
     const turnPenalty = (1 - Math.max(-1, Math.min(1, direction.x * baseDirection.x + direction.y * baseDirection.y))) * 14;
     const movement = pixelDistance(origin, point);
+    const targetDistance = targetPoint ? pixelDistance(point, targetPoint) : 0;
     const targetGain = targetPoint
       ? pixelDistance(origin, targetPoint) - pixelDistance(point, targetPoint)
+      : 0;
+    const closeTargetBonus = targetPoint && targetDistance < bidenCloseRange
+      ? (bidenCloseRange - targetDistance) * 2.4
       : 0;
     const wallPenalty = wallEscapeMagnitude(point) * 22;
     const outwardPenalty = outwardWallPressure(origin, direction) * 120;
 
-    return clearance * 4 + wallMargin * 0.25 + movement * 2 + targetGain * 3 - turnPenalty - collisionPenalty - wallPenalty - outwardPenalty;
+    return clearance * 4 + wallMargin * 0.25 + movement * 2 + targetGain * 6 + closeTargetBonus - turnPenalty - collisionPenalty - wallPenalty - outwardPenalty;
   }
 
   function wallEscapeMagnitude(point) {

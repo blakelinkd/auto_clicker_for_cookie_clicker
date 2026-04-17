@@ -928,6 +928,7 @@ class DomShimmerHandler:
         record_event: Callable[[str], None],
         record_shimmer_click_runtime: Callable[[int, str], None],
         record_shimmer_collect_runtime: Callable[[str, int, str, bool], None],
+        overlay_event_sender: Callable[..., None] | None = None,
         get_pending_hand_shimmer: Callable[..., dict[str, Any] | None],
         clear_pending_hand_shimmer: Callable[[int], None],
         recent_shimmer_clicks: dict[int, float],
@@ -939,6 +940,7 @@ class DomShimmerHandler:
         feed_poll_interval: float,
         shimmer_click_delay_seconds: float,
         shimmer_click_cooldown: float,
+        overlay_click_delay_seconds: float = 1.0,
     ):
         self._log = log
         self._click_lock = click_lock
@@ -955,6 +957,7 @@ class DomShimmerHandler:
         self._record_event = record_event
         self._record_shimmer_click_runtime = record_shimmer_click_runtime
         self._record_shimmer_collect_runtime = record_shimmer_collect_runtime
+        self._overlay_event_sender = overlay_event_sender
         self._get_pending_hand_shimmer = get_pending_hand_shimmer
         self._clear_pending_hand_shimmer = clear_pending_hand_shimmer
         self._recent_shimmer_clicks = recent_shimmer_clicks
@@ -966,6 +969,8 @@ class DomShimmerHandler:
         self._feed_poll_interval = feed_poll_interval
         self._shimmer_click_delay_seconds = shimmer_click_delay_seconds
         self._shimmer_click_cooldown = shimmer_click_cooldown
+        self._overlay_click_delay_seconds = float(overlay_click_delay_seconds)
+        self._overlay_preview_started: dict[int, float] = {}
 
     def process(self, context: DomShimmerContext) -> DomShimmerResult:
         shimmer_started = self._perf_counter()
@@ -991,6 +996,9 @@ class DomShimmerHandler:
         for shimmer_id in list(self._shimmer_click_attempts):
             if shimmer_id not in active_ids:
                 self._shimmer_click_attempts.pop(shimmer_id, None)
+        for shimmer_id in list(self._overlay_preview_started):
+            if shimmer_id not in active_ids:
+                self._overlay_preview_started.pop(shimmer_id, None)
 
         active_buff_names = {buff["name"] for buff in context.buffs if isinstance(buff, dict) and buff.get("name")}
         if isinstance(last_golden_decision, dict):
@@ -1036,6 +1044,10 @@ class DomShimmerHandler:
                 "outcome": outcome,
                 "new_buffs": new_buffs,
                 "seed_at_click": clicked_seed,
+                "spawn_lead": pending.get("spawn_lead"),
+                "no_count": pending.get("no_count"),
+                "force": pending.get("force"),
+                "force_obj_type": pending.get("force_obj_type"),
             }
             if not decision_blocked:
                 self._record_shimmer_outcome(shimmer_result_entry)
@@ -1099,6 +1111,18 @@ class DomShimmerHandler:
                     suppress_main_click_until,
                     context.now + self._main_click_suppress_seconds,
                 )
+                overlay_ready, overlay_pre_emitted = self._prepare_overlay_click_delay(
+                    priority_shimmer,
+                    context=context,
+                    mode="planned",
+                )
+                if not overlay_ready:
+                    self._sleep(self._feed_poll_interval)
+                    return DomShimmerResult(
+                        handled=True,
+                        last_seen_golden_decision=last_seen_golden_decision,
+                        suppress_main_click_until=suppress_main_click_until,
+                    )
                 self._log.info(
                     f"Clicking planned shimmer id={priority_shimmer['id']} type={priority_shimmer['type']} "
                     f"wrath={int(priority_shimmer['wrath'])} "
@@ -1116,6 +1140,10 @@ class DomShimmerHandler:
                         hold=self._bonus_click_hold,
                     )
                 click_time = self._monotonic()
+                if overlay_pre_emitted:
+                    self._overlay_preview_started.pop(target_id, None)
+                else:
+                    self._emit_overlay_spawn(priority_shimmer, mode="planned", clicked_at=click_time)
                 self._recent_shimmer_clicks[priority_shimmer["id"]] = click_time
                 self._pending_shimmer_results[priority_shimmer["id"]] = self._build_pending_result(
                     shimmer=priority_shimmer,
@@ -1159,7 +1187,8 @@ class DomShimmerHandler:
             if should_skip_wrath and shimmer.get("wrath"):
                 continue
             first_seen = self._shimmer_first_seen.get(shimmer["id"], context.now)
-            if (context.now - first_seen) < self._shimmer_click_delay_seconds:
+            click_delay = 0.15 if shimmer.get("type") == "fortune" else self._shimmer_click_delay_seconds
+            if (context.now - first_seen) < click_delay:
                 continue
             last_click = self._recent_shimmer_clicks.get(shimmer["id"])
             if last_click is not None and (context.now - last_click) < self._shimmer_click_cooldown:
@@ -1181,9 +1210,23 @@ class DomShimmerHandler:
                 suppress_main_click_until,
                 context.now + self._main_click_suppress_seconds,
             )
+            overlay_ready, overlay_pre_emitted = self._prepare_overlay_click_delay(
+                shimmer,
+                context=context,
+                mode="clicked",
+            )
+            if not overlay_ready:
+                self._sleep(self._feed_poll_interval)
+                return DomShimmerResult(
+                    handled=True,
+                    last_seen_golden_decision=last_seen_golden_decision,
+                    suppress_main_click_until=suppress_main_click_until,
+                )
             self._log.info(
                 f"Clicking shimmer id={shimmer['id']} type={shimmer['type']} "
                 f"wrath={int(shimmer['wrath'])} "
+                f"spawn_lead={int(bool(shimmer.get('spawn_lead')))} "
+                f"force={shimmer.get('force')} "
                 f"visible={len(visible_ids)} visible_wrath={len(visible_wrath_ids)} "
                 f"target_rank={selected_index + 1 if selected_index >= 0 else '-'} "
                 f"visible_ids={self._format_shimmer_id_list(visible_ids)} "
@@ -1198,6 +1241,11 @@ class DomShimmerHandler:
                     hold=self._bonus_click_hold,
                 )
             click_time = self._monotonic()
+            shimmer_id = int(shimmer["id"])
+            if overlay_pre_emitted:
+                self._overlay_preview_started.pop(shimmer_id, None)
+            else:
+                self._emit_overlay_spawn(shimmer, mode="clicked", clicked_at=click_time)
             self._recent_shimmer_clicks[shimmer["id"]] = click_time
             self._pending_shimmer_results[shimmer["id"]] = self._build_pending_result(
                 shimmer=shimmer,
@@ -1230,6 +1278,45 @@ class DomShimmerHandler:
             suppress_main_click_until=suppress_main_click_until,
         )
 
+    def _prepare_overlay_click_delay(
+        self,
+        shimmer: dict[str, Any],
+        *,
+        context: DomShimmerContext,
+        mode: str,
+    ) -> tuple[bool, bool]:
+        if not self._should_delay_for_overlay(context, shimmer):
+            return True, False
+        shimmer_id = int(shimmer["id"])
+        started_at = self._overlay_preview_started.get(shimmer_id)
+        if started_at is None:
+            self._emit_overlay_spawn(shimmer, mode=f"{mode}_preview", clicked_at=context.now)
+            self._overlay_preview_started[shimmer_id] = context.now
+            return False, True
+        return (context.now - started_at) >= self._overlay_click_delay_seconds, True
+
+    def _should_delay_for_overlay(self, context: DomShimmerContext, shimmer: dict[str, Any]) -> bool:
+        if self._overlay_event_sender is None:
+            return False
+        if self._overlay_click_delay_seconds <= 0:
+            return False
+        if shimmer.get("type") == "fortune":
+            return False
+        if len(context.shimmers) > 1:
+            return False
+        return True
+
+    def _emit_overlay_spawn(self, shimmer: dict[str, Any], *, mode: str, clicked_at: float) -> None:
+        if self._overlay_event_sender is None:
+            return
+        try:
+            self._overlay_event_sender(shimmer, mode=mode, clicked_at=clicked_at)
+        except Exception as exc:
+            try:
+                self._log.debug(f"Overlay event ignored after shimmer click: {exc}")
+            except Exception:
+                pass
+
     @staticmethod
     def _build_pending_result(
         *,
@@ -1253,6 +1340,14 @@ class DomShimmerHandler:
             "visible_wrath_count": len(visible_wrath_ids),
             "visible_ids": visible_ids,
             "visible_wrath_ids": visible_wrath_ids,
+            "spawn_lead": shimmer.get("spawn_lead"),
+            "no_count": shimmer.get("no_count"),
+            "force": shimmer.get("force"),
+            "force_obj_type": shimmer.get("force_obj_type"),
+            "effect_kind": shimmer.get("effect_kind"),
+            "effect_name": shimmer.get("effect_name"),
+            "effect_id": shimmer.get("effect_id"),
+            "text": shimmer.get("text"),
         }
 
 

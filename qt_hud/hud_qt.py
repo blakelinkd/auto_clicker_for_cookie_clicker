@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QStyle,
     QStylePainter,
     QStyleOptionTab,
+    QSlider,
 )
 from PySide6.QtGui import QFont, QColor, QPalette, QBrush, QLinearGradient, QPainter, QPen, QFontMetrics
 
@@ -374,11 +375,13 @@ class QtDashboard(QMainWindow):
         toggle_active,
         toggle_main_autoclick,
         toggle_shimmer_autoclick,
+        toggle_wrath_cookie_clicking,
         toggle_stock_buying,
         toggle_lucky_reserve,
         toggle_building_buying,
         toggle_upgrade_buying,
         toggle_ascension_prep,
+        toggle_garden_automation,
         set_upgrade_horizon_seconds,
         set_building_horizon_seconds,
         set_building_cap,
@@ -396,11 +399,13 @@ class QtDashboard(QMainWindow):
         self.toggle_active = toggle_active
         self.toggle_main_autoclick = toggle_main_autoclick
         self.toggle_shimmer_autoclick = toggle_shimmer_autoclick
+        self.toggle_wrath_cookie_clicking = toggle_wrath_cookie_clicking or (lambda: None)
         self.toggle_stock_buying = toggle_stock_buying
         self.toggle_lucky_reserve = toggle_lucky_reserve
         self.toggle_building_buying = toggle_building_buying
         self.toggle_upgrade_buying = toggle_upgrade_buying
         self.toggle_ascension_prep = toggle_ascension_prep
+        self.toggle_garden_automation = toggle_garden_automation
         self.set_upgrade_horizon_seconds = set_upgrade_horizon_seconds
         self.set_building_horizon_seconds = set_building_horizon_seconds
         self.set_building_cap = set_building_cap
@@ -424,6 +429,9 @@ class QtDashboard(QMainWindow):
         self.summary_vars = {}
         self.timing_vars = {}
         self.building_cap_rows = {}
+        
+        # Horizon sync state
+        self._syncing_horizons = False
 
         self.setWindowTitle("Cookie Clicker Bot (Qt)")
         if initial_geometry:
@@ -781,7 +789,8 @@ class QtDashboard(QMainWindow):
         core_group = self._create_toggle_group("Core Automation", [
             ("active", "Bot Active", self._safe_toggle_active),
             ("main_autoclick", "Main Autoclick", self.toggle_main_autoclick),
-            ("shimmer_autoclick", "GC/Wrath Click", self.toggle_shimmer_autoclick),
+            ("shimmer_autoclick", "GC Click", self.toggle_shimmer_autoclick),
+            ("wrath_cookie", "Wrath Cookies", self.toggle_wrath_cookie_clicking),
         ])
         layout.addWidget(core_group)
 
@@ -819,6 +828,14 @@ class QtDashboard(QMainWindow):
         ascension_btn.clicked.connect(self.toggle_ascension_prep)
         adv_layout.addWidget(ascension_btn)
         self.toggle_buttons["ascension"] = ascension_btn
+        
+        # Garden Automation toggle (off by default)
+        garden_btn = QPushButton("Garden Automation")
+        garden_btn.setCheckable(True)
+        garden_btn.setStyleSheet(theme.button_style("toggle"))
+        garden_btn.clicked.connect(self.toggle_garden_automation)
+        adv_layout.addWidget(garden_btn)
+        self.toggle_buttons["garden"] = garden_btn
         
         # Cycle Wrinkler Mode button (special, not a toggle)
         self.wrinkler_btn = QPushButton("Cycle Wrinkler Mode")
@@ -1115,26 +1132,6 @@ class QtDashboard(QMainWindow):
 
         layout.addWidget(shimmer_panel)
 
-        # Building Caps panel
-        caps_panel = QGroupBox("Building Caps")
-        caps_panel.setStyleSheet(theme.panel_style())
-        caps_layout = QVBoxLayout(caps_panel)
-
-        self.building_caps_meta = QLabel("0 buildings | ignored 0 | blank cap entry resets to default")
-        self.building_caps_meta.setStyleSheet(theme.secondary_label_style())
-        caps_layout.addWidget(self.building_caps_meta)
-
-        # Scrollable area for building caps
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet(theme.scroll_area_style())
-        self.building_caps_widget = QWidget()
-        self.building_caps_layout = QVBoxLayout(self.building_caps_widget)
-        self.building_caps_layout.setAlignment(Qt.AlignTop)
-        scroll.setWidget(self.building_caps_widget)
-        caps_layout.addWidget(scroll)
-
-        layout.addWidget(caps_panel)
         layout.addStretch()
 
         return tab
@@ -1188,24 +1185,96 @@ class QtDashboard(QMainWindow):
         panel_layout.addSpacing(20)
         panel_layout.addWidget(QLabel("<b>Horizon Timers (Advanced)</b>"))
 
-        upgrade_layout = QHBoxLayout()
-        upgrade_layout.addWidget(QLabel("Upgrade Horizon:"))
-        self.upgrade_horizon_spin = QSpinBox()
-        self.upgrade_horizon_spin.setRange(5, 3600)
-        self.upgrade_horizon_spin.setValue(360)
-        self.upgrade_horizon_spin.setSuffix("s")
-        upgrade_layout.addWidget(self.upgrade_horizon_spin, 1)
-        upgrade_layout.addWidget(QLabel("Ideal: 1-3h"))
+        # Upgrade horizon slider
+        upgrade_layout = QVBoxLayout()
+        upgrade_header = QHBoxLayout()
+        upgrade_header.addWidget(QLabel("Upgrade Horizon:"))
+        self.upgrade_horizon_value_label = QLabel("6m")
+        self.upgrade_horizon_value_label.setStyleSheet(theme.accent_green_color_style())
+        upgrade_header.addWidget(self.upgrade_horizon_value_label)
+        upgrade_header.addStretch()
+        upgrade_header.addWidget(QLabel("Ideal: 1-3h"))
+        upgrade_layout.addLayout(upgrade_header)
+        
+        self.upgrade_horizon_slider = QSlider(Qt.Horizontal)
+        self.upgrade_horizon_slider.setRange(1, 180)  # 1 to 180 minutes (3 hours)
+        self.upgrade_horizon_slider.setValue(6)  # Default 6 minutes
+        self.upgrade_horizon_slider.setTickPosition(QSlider.TicksBelow)
+        self.upgrade_horizon_slider.setTickInterval(15)  # Tick every 15 minutes
+        self.upgrade_horizon_slider.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                border: 1px solid {self.COLORS['border_color']};
+                height: 8px;
+                background: {self.COLORS['panel_bg']};
+                margin: 2px 0;
+                border-radius: 4px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {self.COLORS['info_blue']};
+                border: 1px solid {self.COLORS['border_color']};
+                width: 18px;
+                height: 18px;
+                margin: -5px 0;
+                border-radius: 9px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {self.COLORS['info_blue']};
+                border-radius: 4px;
+            }}
+        """)
+        self.upgrade_horizon_slider.valueChanged.connect(self._on_upgrade_horizon_slider_changed)
+        upgrade_layout.addWidget(self.upgrade_horizon_slider)
+        
+        self.upgrade_horizon_status = QLabel("")
+        self.upgrade_horizon_status.setStyleSheet(theme.secondary_label_style())
+        upgrade_layout.addWidget(self.upgrade_horizon_status)
+        
         panel_layout.addLayout(upgrade_layout)
 
-        building_layout = QHBoxLayout()
-        building_layout.addWidget(QLabel("Building Horizon:"))
-        self.building_horizon_spin = QSpinBox()
-        self.building_horizon_spin.setRange(5, 3600)
-        self.building_horizon_spin.setValue(120)
-        self.building_horizon_spin.setSuffix("s")
-        building_layout.addWidget(self.building_horizon_spin, 1)
-        building_layout.addWidget(QLabel("Ideal: 30-90m"))
+        # Building horizon slider
+        building_layout = QVBoxLayout()
+        building_header = QHBoxLayout()
+        building_header.addWidget(QLabel("Building Horizon:"))
+        self.building_horizon_value_label = QLabel("2m")
+        self.building_horizon_value_label.setStyleSheet(theme.accent_green_color_style())
+        building_header.addWidget(self.building_horizon_value_label)
+        building_header.addStretch()
+        building_header.addWidget(QLabel("Ideal: 30-90m"))
+        building_layout.addLayout(building_header)
+        
+        self.building_horizon_slider = QSlider(Qt.Horizontal)
+        self.building_horizon_slider.setRange(1, 180)  # 1 to 180 minutes (3 hours)
+        self.building_horizon_slider.setValue(2)  # Default 2 minutes
+        self.building_horizon_slider.setTickPosition(QSlider.TicksBelow)
+        self.building_horizon_slider.setTickInterval(15)  # Tick every 15 minutes
+        self.building_horizon_slider.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                border: 1px solid {self.COLORS['border_color']};
+                height: 8px;
+                background: {self.COLORS['panel_bg']};
+                margin: 2px 0;
+                border-radius: 4px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {self.COLORS['info_blue']};
+                border: 1px solid {self.COLORS['border_color']};
+                width: 18px;
+                height: 18px;
+                margin: -5px 0;
+                border-radius: 9px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {self.COLORS['info_blue']};
+                border-radius: 4px;
+            }}
+        """)
+        self.building_horizon_slider.valueChanged.connect(self._on_building_horizon_slider_changed)
+        building_layout.addWidget(self.building_horizon_slider)
+        
+        self.building_horizon_status = QLabel("")
+        self.building_horizon_status.setStyleSheet(theme.secondary_label_style())
+        building_layout.addWidget(self.building_horizon_status)
+        
         panel_layout.addLayout(building_layout)
 
         # Horizon preset buttons
@@ -1345,15 +1414,7 @@ class QtDashboard(QMainWindow):
         self.building_stats_table.resizeColumnsToContents()
         stats_layout.addWidget(self.building_stats_table)
 
-        # Cap control toggle
-        cap_layout = QHBoxLayout()
-        cap_layout.addWidget(QLabel("Ignore Building Caps:"))
-        self.cap_ignore_toggle = QPushButton("Disable Cap")
-        self.cap_ignore_toggle.setCheckable(True)
-        self.cap_ignore_toggle.setStyleSheet(theme.button_style("toggle"))
-        cap_layout.addWidget(self.cap_ignore_toggle)
-        cap_layout.addStretch()
-        stats_layout.addLayout(cap_layout)
+        stats_layout.addWidget(self._create_building_caps_panel(), 1)
 
         # Stats summary
         self.stats_summary = QLabel("Purchases Completed: 4,567 | Total Gold Spent: 89 Million")
@@ -1364,6 +1425,26 @@ class QtDashboard(QMainWindow):
         layout.addWidget(stats_panel)
 
         return tab
+
+    def _create_building_caps_panel(self):
+        caps_panel = QGroupBox("Building Caps")
+        caps_panel.setStyleSheet(theme.panel_style())
+        caps_layout = QVBoxLayout(caps_panel)
+
+        self.building_caps_meta = QLabel("0 buildings | ignored 0 | blank cap entry resets to default")
+        self.building_caps_meta.setStyleSheet(theme.secondary_label_style())
+        caps_layout.addWidget(self.building_caps_meta)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(theme.scroll_area_style())
+        self.building_caps_widget = QWidget()
+        self.building_caps_layout = QVBoxLayout(self.building_caps_widget)
+        self.building_caps_layout.setAlignment(Qt.AlignTop)
+        scroll.setWidget(self.building_caps_widget)
+        caps_layout.addWidget(scroll)
+
+        return caps_panel
 
     def _create_garden_automation_tab(self):
         """Create Garden Automation tab matching hud_mockup.html."""
@@ -1452,7 +1533,7 @@ class QtDashboard(QMainWindow):
         garden_stats = payload["garden_stats"]
         combo_stats = payload["combo_stats"]
         spell_stats = payload["spell_stats"]
-        last_building_diag = state.get("last_building_diag") or {}
+        last_building_diag = state.get("last_building_diag") or payload.get("last_building_diag") or {}
         last_upgrade_diag = state.get("last_upgrade_diag") or {}
         last_spell_diag = state.get("last_spell_diag") or {}
         last_garden_diag = state.get("last_garden_diag") or {}
@@ -1504,8 +1585,10 @@ class QtDashboard(QMainWindow):
                 "building": "building_autobuy_enabled",
                 "upgrade": "upgrade_autobuy_enabled",
                 "ascension": "ascension_prep_enabled",
+                "garden": "garden_automation_enabled",
                 "main_autoclick": "main_cookie_clicking_enabled",
                 "shimmer_autoclick": "shimmer_autoclick_enabled",
+                "wrath_cookie": "wrath_cookie_clicking_enabled",
             }.get(key)
             if state_key:
                 btn.setChecked(bool(state.get(state_key)))
@@ -1524,6 +1607,14 @@ class QtDashboard(QMainWindow):
         
         # Update settings tab
         self._update_settings_tab()
+        
+        # Sync horizon slider values from current state
+        upgrade_horizon_seconds = state.get("upgrade_horizon_seconds") or last_upgrade_diag.get("horizon_seconds")
+        building_horizon_seconds = state.get("building_horizon_seconds") or last_building_diag.get("payback_horizon_seconds")
+        self._sync_horizon_inputs(
+            upgrade_horizon_seconds=upgrade_horizon_seconds,
+            building_horizon_seconds=building_horizon_seconds,
+        )
 
         # Update gameplay tab (purchase progress, live status, trader)
         self._update_gameplay_tab(
@@ -1548,8 +1639,9 @@ class QtDashboard(QMainWindow):
         
         # Update diagnostics tab (shimmer RNG, building caps)
         shimmer_stats = payload.get("shimmer_stats") or {}
-        building_entries = last_building_diag.get("buildings", [])
+        building_entries = last_building_diag.get("buildings") or building_stats.get("buildings") or []
         self._update_diagnostics_tab(shimmer_stats, building_entries, building_stats)
+        self._update_building_caps(building_entries, building_stats)
 
     def _update_gameplay_tab(self, state, building_diag, upgrade_diag, spell_diag,
                             wrinkler_diag, bank_diag, trade_stats, garden_stats,
@@ -1824,59 +1916,83 @@ class QtDashboard(QMainWindow):
             f"+{positive} -{negative} ={neutral} | Seeds: {seeds}/20"
         )
 
-        # Building caps
+    def _create_building_cap_row(self, name):
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(5, 5, 5, 5)
+
+        name_label = QLabel(name)
+        summary_label = QLabel("Owned: - | Cap: - | Remaining: -")
+        row_layout.addWidget(name_label)
+        row_layout.addWidget(summary_label, 1)
+
+        ignore_check = QCheckBox("Ignore")
+        if self.set_building_cap_ignored:
+            ignore_check.stateChanged.connect(
+                lambda state, n=name: self.set_building_cap_ignored(n, bool(state))
+            )
+        row_layout.addWidget(ignore_check)
+
+        cap_input = QLineEdit()
+        cap_input.setPlaceholderText("Manual cap")
+        cap_input.setMaximumWidth(80)
+        cap_input.returnPressed.connect(lambda n=name, inp=cap_input: self._apply_building_cap(n, inp))
+        row_layout.addWidget(cap_input)
+
+        apply_btn = QPushButton("Apply")
+        apply_btn.setStyleSheet(theme.button_style("secondary"))
+        if self.set_building_cap:
+            apply_btn.clicked.connect(
+                lambda checked=False, n=name, inp=cap_input: self._apply_building_cap(n, inp)
+            )
+        row_layout.addWidget(apply_btn)
+
+        return {
+            "widget": row,
+            "name": name_label,
+            "summary": summary_label,
+            "ignore": ignore_check,
+            "cap_input": cap_input,
+            "apply": apply_btn,
+        }
+
+    def _update_building_caps(self, building_entries, building_stats):
         ignored = set(building_stats.get("ignored_building_caps") or [])
         self.building_caps_meta.setText(
             f"{len(building_entries)} buildings | ignored {len(ignored)}"
         )
 
-        # Clear existing cap rows
-        while self.building_caps_layout.count():
-            item = self.building_caps_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        # Add new rows
+        seen_names = set()
         for entry in building_entries:
             if not isinstance(entry, dict) or not entry.get("name"):
                 continue
             name = entry["name"]
+            seen_names.add(name)
             amount = entry.get("amount", 0)
             cap = entry.get("cap", "-")
             remaining = entry.get("remaining_to_cap", "-")
             manual_cap = entry.get("manual_cap")
             cap_ignored = entry.get("cap_ignored") or name in ignored
 
-            row = QWidget()
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(5, 5, 5, 5)
+            row = self.building_cap_rows.get(name)
+            if row is None:
+                row = self._create_building_cap_row(name)
+                self.building_cap_rows[name] = row
+                self.building_caps_layout.addWidget(row["widget"])
 
-            row_layout.addWidget(QLabel(name))
-            row_layout.addWidget(QLabel(f"Owned: {amount} | Cap: {cap} | Remaining: {remaining}"))
+            row["widget"].setVisible(True)
+            row["summary"].setText(f"Owned: {amount} | Cap: {cap} | Remaining: {remaining}")
+            row["ignore"].blockSignals(True)
+            row["ignore"].setChecked(bool(cap_ignored))
+            row["ignore"].blockSignals(False)
 
-            ignore_check = QCheckBox("Ignore")
-            ignore_check.setChecked(cap_ignored)
-            if self.set_building_cap_ignored:
-                ignore_check.stateChanged.connect(
-                    lambda state, n=name: self.set_building_cap_ignored(n, bool(state))
-                )
-            row_layout.addWidget(ignore_check)
+            if not row["cap_input"].hasFocus() and not row["cap_input"].isModified():
+                row["cap_input"].setText(str(manual_cap) if manual_cap is not None else "")
+                row["cap_input"].setModified(False)
 
-            cap_input = QLineEdit()
-            cap_input.setPlaceholderText("Manual cap")
-            cap_input.setText(str(manual_cap) if manual_cap is not None else "")
-            cap_input.setMaximumWidth(80)
-            row_layout.addWidget(cap_input)
-
-            apply_btn = QPushButton("Apply")
-            apply_btn.setStyleSheet(theme.button_style("secondary"))
-            if self.set_building_cap:
-                apply_btn.clicked.connect(
-                    lambda checked=False, n=name, inp=cap_input: self._apply_building_cap(n, inp)
-                )
-            row_layout.addWidget(apply_btn)
-
-            self.building_caps_layout.addWidget(row)
+        for name, row in self.building_cap_rows.items():
+            if name not in seen_names:
+                row["widget"].setVisible(False)
 
     def _update_status_logs_tab(self, state, feed):
         """Update status & logs tab with current state."""
@@ -2060,14 +2176,88 @@ class QtDashboard(QMainWindow):
         try:
             cap = None if text == "" else int(text)
             self.set_building_cap(building_name, cap)
+            input_widget.setModified(False)
+            input_widget.clearFocus()
         except ValueError:
             pass
 
-    def _apply_horizon_preset(self, minutes):
-        """Apply horizon preset (in minutes) to building horizon spinbox."""
+    def _on_upgrade_horizon_slider_changed(self, minutes):
+        """Handle upgrade horizon slider value change."""
+        # Update value label
+        self.upgrade_horizon_value_label.setText(f"{minutes}m")
+        
+        # Skip if we're syncing from external state
+        if hasattr(self, '_syncing_horizons') and self._syncing_horizons:
+            return
+        
+        # Convert to seconds and call setter
         seconds = minutes * 60
-        self.building_horizon_spin.setValue(seconds)
-        # Optionally also update upgrade horizon? Not for now.
+        if self.set_upgrade_horizon_seconds:
+            ok, result = self.set_upgrade_horizon_seconds(seconds)
+            if ok:
+                self.upgrade_horizon_status.setText(f"✅ Upgrade horizon set to {minutes}m")
+                # Update slider to exact value (in case setter adjusted it)
+                if isinstance(result, (int, float)):
+                    actual_minutes = max(1, int(round(float(result) / 60.0)))
+                    if actual_minutes != minutes:
+                        self.upgrade_horizon_slider.setValue(actual_minutes)
+            else:
+                self.upgrade_horizon_status.setText(f"❌ Failed: {result}")
+    
+    def _on_building_horizon_slider_changed(self, minutes):
+        """Handle building horizon slider value change."""
+        # Update value label
+        self.building_horizon_value_label.setText(f"{minutes}m")
+        
+        # Skip if we're syncing from external state
+        if hasattr(self, '_syncing_horizons') and self._syncing_horizons:
+            return
+        
+        # Convert to seconds and call setter
+        seconds = minutes * 60
+        if self.set_building_horizon_seconds:
+            ok, result = self.set_building_horizon_seconds(seconds)
+            if ok:
+                self.building_horizon_status.setText(f"✅ Building horizon set to {minutes}m")
+                # Update slider to exact value (in case setter adjusted it)
+                if isinstance(result, (int, float)):
+                    actual_minutes = max(1, int(round(float(result) / 60.0)))
+                    if actual_minutes != minutes:
+                        self.building_horizon_slider.setValue(actual_minutes)
+            else:
+                self.building_horizon_status.setText(f"❌ Failed: {result}")
+
+    def _sync_horizon_inputs(self, *, upgrade_horizon_seconds=None, building_horizon_seconds=None):
+        """Sync horizon slider values from current state."""
+        # Prevent recursive updates
+        if hasattr(self, '_syncing_horizons') and self._syncing_horizons:
+            return
+        self._syncing_horizons = True
+        
+        try:
+            if upgrade_horizon_seconds is not None:
+                minutes = max(1, min(180, int(round(float(upgrade_horizon_seconds) / 60.0))))
+                if self.upgrade_horizon_slider.value() != minutes:
+                    self.upgrade_horizon_slider.setValue(minutes)
+                    self.upgrade_horizon_value_label.setText(f"{minutes}m")
+            
+            if building_horizon_seconds is not None:
+                minutes = max(1, min(180, int(round(float(building_horizon_seconds) / 60.0))))
+                if self.building_horizon_slider.value() != minutes:
+                    self.building_horizon_slider.setValue(minutes)
+                    self.building_horizon_value_label.setText(f"{minutes}m")
+        finally:
+            self._syncing_horizons = False
+
+    def _apply_horizon_preset(self, minutes):
+        """Apply horizon preset (in minutes) to building horizon slider."""
+        # Clip to slider range
+        minutes = max(1, min(180, minutes))
+        self.building_horizon_slider.setValue(minutes)
+        # Also update upgrade horizon if it's a common preset?
+        # For now, just update building horizon.
+        # Call the slider change handler to apply the change
+        self._on_building_horizon_slider_changed(minutes)
 
     def _format_number(self, value):
         """Format large numbers with suffixes (K, M, B, T)."""

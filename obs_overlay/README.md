@@ -59,9 +59,11 @@ without waiting for bot clicks.
 
 Grandma switches between classic snake movement and heat-seeking movement every
 three eaten Bidens. Mode changes are announced in a translucent combat-log panel
-in the bottom-right corner of the overlay. Biden spawn chatter appears there as
-blue `biden` messages; Grandma mode chatter appears as red `grandma` messages.
-Durgular also yells in chat every 20 seconds with purple `durgular` messages.
+in the bottom-right corner of the overlay. Names use World of Warcraft class
+colors: `biden` is Hunter green, `grandma` is Warlock purple, and `durgular` is
+Warrior tan. Every tenth Biden spawn also adds a pink italic whisper from
+`biotachyonic` with a Druid-orange name. Durgular also yells in chat every 20
+seconds.
 
 Snake mode uses local Cookie Clicker game sprites copied from the Steam install:
 `buildings.png` for the smoothed grandma segment head and `goldCookie.png` for

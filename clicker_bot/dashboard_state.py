@@ -41,6 +41,8 @@ class DashboardStateBuilder:
             1 for event in self.shimmer_seed_history if event.get("classification") == "neutral"
         )
         seeds_captured = sum(1 for event in self.shimmer_seed_history if event.get("seed"))
+        spawn_lead_true = sum(1 for event in self.shimmer_seed_history if event.get("spawn_lead") is True)
+        spawn_lead_false = sum(1 for event in self.shimmer_seed_history if event.get("spawn_lead") is False)
         shimmer_telemetry = state.get("last_shimmer_telemetry") or {}
         return {
             "state": state,
@@ -59,6 +61,8 @@ class DashboardStateBuilder:
                 "negative": shimmer_negative,
                 "neutral": shimmer_neutral,
                 "seeds_captured": seeds_captured,
+                "spawn_lead_true": spawn_lead_true,
+                "spawn_lead_false": spawn_lead_false,
                 "tracking_active": bool(state.get("active")),
                 "reset_reason": self.get_shimmer_reset_reason(),
                 "valid": bool(state.get("active")),

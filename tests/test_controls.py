@@ -57,11 +57,13 @@ class BotControlsTests(unittest.TestCase):
             "active": True,
             "main_cookie_clicking_enabled": False,
             "shimmer_autoclick_enabled": True,
+            "wrath_cookie_clicking_enabled": True,
             "building_autobuy_enabled": False,
             "lucky_reserve_enabled": False,
             "upgrade_autobuy_enabled": True,
             "ascension_prep_enabled": False,
             "stock_trading_enabled": False,
+            "garden_automation_enabled": False,
             "upgrade_horizon_seconds": 1800.0,
             "click_thread": None,
         }
@@ -79,6 +81,8 @@ class BotControlsTests(unittest.TestCase):
             set_main_cookie_clicking_enabled=setter("main_cookie_clicking_enabled"),
             get_shimmer_autoclick_enabled=lambda: state["shimmer_autoclick_enabled"],
             set_shimmer_autoclick_enabled=setter("shimmer_autoclick_enabled"),
+            get_wrath_cookie_clicking_enabled=lambda: state["wrath_cookie_clicking_enabled"],
+            set_wrath_cookie_clicking_enabled=setter("wrath_cookie_clicking_enabled"),
             get_building_autobuy_enabled=lambda: state["building_autobuy_enabled"],
             set_building_autobuy_enabled=setter("building_autobuy_enabled"),
             get_lucky_reserve_enabled=lambda: state["lucky_reserve_enabled"],
@@ -89,6 +93,8 @@ class BotControlsTests(unittest.TestCase):
             set_ascension_prep_enabled=setter("ascension_prep_enabled"),
             get_stock_trading_enabled=lambda: state["stock_trading_enabled"],
             set_stock_trading_enabled=setter("stock_trading_enabled"),
+            get_garden_automation_enabled=lambda: state["garden_automation_enabled"],
+            set_garden_automation_enabled=setter("garden_automation_enabled"),
             get_lifecycle=lambda: lifecycle,
             set_click_thread=setter("click_thread"),
             building_autobuyer=autobuyer,
@@ -111,6 +117,17 @@ class BotControlsTests(unittest.TestCase):
         self.assertEqual(state["click_thread"], "thread")
         self.assertEqual(lifecycle.ensure_calls, 1)
         self.assertTrue(any("Main cookie click loop enabled" in msg for msg in log.infos))
+
+    def test_toggle_wrath_cookie_clicking_updates_runtime(self):
+        controls, state, runtime_updates, events, mode_changes, _lifecycle, _autobuyer, _log = self._build_controls()
+
+        enabled = controls.toggle_wrath_cookie_clicking(source="hud_button")
+
+        self.assertFalse(enabled)
+        self.assertFalse(state["wrath_cookie_clicking_enabled"])
+        self.assertEqual(runtime_updates[-1], {"wrath_cookie_clicking_enabled": False})
+        self.assertEqual(events[-1], "Wrath cookie clicking OFF")
+        self.assertEqual(mode_changes[-1], ("Wrath cookie clicking", False, "hud_button"))
 
     def test_set_upgrade_horizon_validates_and_updates(self):
         controls, state, runtime_updates, events, _mode_changes, _lifecycle, _autobuyer, _log = self._build_controls()

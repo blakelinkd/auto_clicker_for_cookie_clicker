@@ -22,6 +22,7 @@ class DashboardCallbacks:
     toggle_building_buying: object
     toggle_upgrade_buying: object
     toggle_ascension_prep: object
+    toggle_garden_automation: object
     set_upgrade_horizon_seconds: object
     set_building_horizon_seconds: object
     set_building_cap: object
@@ -31,6 +32,7 @@ class DashboardCallbacks:
     dump_shimmer_data: object
     get_config: Optional[Any] = field(default=None)
     save_config: Optional[Any] = field(default=None)
+    toggle_wrath_cookie_clicking: Optional[Any] = field(default=None)
 
 
 def build_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refresh_interval_ms: int, use_qt_hud: bool = True):
@@ -52,6 +54,7 @@ def build_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refresh_
         toggle_building_buying=callbacks.toggle_building_buying,
         toggle_upgrade_buying=callbacks.toggle_upgrade_buying,
         toggle_ascension_prep=callbacks.toggle_ascension_prep,
+        toggle_garden_automation=callbacks.toggle_garden_automation,
         set_upgrade_horizon_seconds=callbacks.set_upgrade_horizon_seconds,
         set_building_horizon_seconds=callbacks.set_building_horizon_seconds,
         set_building_cap=callbacks.set_building_cap,
@@ -83,11 +86,13 @@ def build_qt_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refre
         toggle_active=callbacks.toggle_active,
         toggle_main_autoclick=callbacks.toggle_main_autoclick,
         toggle_shimmer_autoclick=callbacks.toggle_shimmer_autoclick,
+        toggle_wrath_cookie_clicking=callbacks.toggle_wrath_cookie_clicking,
         toggle_stock_buying=callbacks.toggle_stock_buying,
         toggle_lucky_reserve=callbacks.toggle_lucky_reserve,
         toggle_building_buying=callbacks.toggle_building_buying,
         toggle_upgrade_buying=callbacks.toggle_upgrade_buying,
         toggle_ascension_prep=callbacks.toggle_ascension_prep,
+        toggle_garden_automation=callbacks.toggle_garden_automation,
         set_upgrade_horizon_seconds=callbacks.set_upgrade_horizon_seconds,
         set_building_horizon_seconds=callbacks.set_building_horizon_seconds,
         set_building_cap=callbacks.set_building_cap,

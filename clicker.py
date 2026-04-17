@@ -26,6 +26,7 @@ from clicker_bot.controls import BotControls
 from clicker_bot.events import BotEventRecorder
 from clicker_bot.lifecycle import BotLifecycle, BotLifecycleState
 from clicker_bot.minigame_access import plan_minigame_store_access
+from clicker_bot.overlay_events import OverlayEventEmitter
 from clicker_bot.dragon_diagnostics import build_dragon_diag
 from clicker_bot.reserve_policy import ReservePolicy, apply_building_burst_purchase_goal
 from clicker_bot.pause_policy import (
@@ -106,6 +107,7 @@ MAIN_CLICK_SUPPRESS_SECONDS = 0.30
 STORE_SCROLL_WHEEL_MULTIPLIER = 12
 SHIMMER_CLICK_COOLDOWN = 0.12
 SHIMMER_CLICK_DELAY_SECONDS = 1.2
+OVERLAY_SHIMMER_CLICK_DELAY_SECONDS = 1.0
 SPELL_CLICK_COOLDOWN = 1.50
 TRADE_ACTION_COOLDOWN = 0.35
 BUILDING_ACTION_COOLDOWN = 0.35
@@ -130,9 +132,10 @@ POST_UPGRADE_WRINKLER_COOLDOWN_SECONDS = 3.0
 AUTO_CAST_HAND_OF_FATE = True
 ENABLE_MAIN_COOKIE_CLICKING = True
 ENABLE_SHIMMER_AUTOCLICK = True
+ENABLE_WRATH_COOKIE_CLICKING = True
 ENABLE_STOCK_TRADING = False
 ENABLE_BUILDING_AUTOBUY = False
-ENABLE_GARDEN_AUTOMATION = True
+ENABLE_GARDEN_AUTOMATION = False  # Auto-farming off by default
 WRINKLER_MODE = WRINKLER_MODE_HOLD
 
 FEED_PATH = Path(
@@ -352,6 +355,7 @@ ascension_prep_enabled = False
 garden_automation_enabled = ENABLE_GARDEN_AUTOMATION
 main_cookie_clicking_enabled = ENABLE_MAIN_COOKIE_CLICKING
 shimmer_autoclick_enabled = ENABLE_SHIMMER_AUTOCLICK
+wrath_cookie_clicking_enabled = ENABLE_WRATH_COOKIE_CLICKING
 stock_db = StockDatabase(DB_PATH, log)
 stock_trader = StockTrader(log, stock_db)
 building_autobuyer = BuildingAutobuyer(log)
@@ -362,6 +366,10 @@ godzamok_combo = GodzamokComboEngine(log, MAIN_CLICK_INTERVAL)
 spell_autocaster = SpellAutocaster(log)
 wrinkler_controller = WrinklerController(log, mode=WRINKLER_MODE)
 garden_controller = GardenController(log)
+overlay_event_emitter = OverlayEventEmitter(
+    enabled=os.environ.get("COOKIE_BIDEN_OVERLAY_DISABLED") != "1",
+    log=log,
+)
 _last_lucky_multiplier = 1.0
 _last_lucky_multiplier_logged_at = 0.0
 reserve_policy = ReservePolicy(
@@ -401,6 +409,7 @@ runtime_store = RuntimeStore(
         garden_automation_enabled=ENABLE_GARDEN_AUTOMATION,
         main_cookie_clicking_enabled=ENABLE_MAIN_COOKIE_CLICKING,
         shimmer_autoclick_enabled=ENABLE_SHIMMER_AUTOCLICK,
+        wrath_cookie_clicking_enabled=ENABLE_WRATH_COOKIE_CLICKING,
     )
 )
 runtime_lock = runtime_store.lock
@@ -686,6 +695,8 @@ def _classify_shimmer_outcome(outcome):
 
 
 def _should_skip_wrath_shimmer(buffs, combo_diag=None):
+    if not wrath_cookie_clicking_enabled:
+        return True
     if not SKIP_WRATH_DURING_CLICK_BUFFS:
         return False
     buff_names = {buff.get("name") for buff in buffs if isinstance(buff, dict) and buff.get("name")}
@@ -1584,11 +1595,13 @@ def start_dashboard(use_qt_hud: bool = True):
         toggle_active=lambda: toggle(source="hud_button"),
         toggle_main_autoclick=lambda: toggle_main_autoclick(source="hud_button"),
         toggle_shimmer_autoclick=lambda: toggle_shimmer_autoclick(source="hud_button"),
+        toggle_wrath_cookie_clicking=lambda: toggle_wrath_cookie_clicking(source="hud_button"),
         toggle_stock_buying=lambda: toggle_stock_trading(source="hud_button"),
         toggle_lucky_reserve=lambda: toggle_lucky_reserve(source="hud_button"),
         toggle_building_buying=lambda: toggle_building_autobuy(source="hud_button"),
         toggle_upgrade_buying=lambda: toggle_upgrade_autobuy(source="hud_button"),
         toggle_ascension_prep=lambda: toggle_ascension_prep(source="hud_button"),
+        toggle_garden_automation=lambda: toggle_garden_automation(source="hud_button"),
         set_upgrade_horizon_seconds=set_upgrade_horizon_seconds,
         set_building_horizon_seconds=set_building_horizon_seconds,
         set_building_cap=set_building_cap,
@@ -2447,6 +2460,10 @@ def _record_shimmer_outcome(shimmer_result):
         "classification": classification,
         "seed": shimmer_result.get("seed_at_click"),
         "new_buffs": new_buffs,
+        "spawn_lead": shimmer_result.get("spawn_lead"),
+        "no_count": shimmer_result.get("no_count"),
+        "force": shimmer_result.get("force"),
+        "force_obj_type": shimmer_result.get("force_obj_type"),
     }
     shimmer_seed_history.append(entry)
     if len(shimmer_seed_history) > 1000:
@@ -2887,6 +2904,8 @@ def _get_bot_controls():
             set_main_cookie_clicking_enabled=lambda value: globals().__setitem__("main_cookie_clicking_enabled", value),
             get_shimmer_autoclick_enabled=lambda: shimmer_autoclick_enabled,
             set_shimmer_autoclick_enabled=lambda value: globals().__setitem__("shimmer_autoclick_enabled", value),
+            get_wrath_cookie_clicking_enabled=lambda: wrath_cookie_clicking_enabled,
+            set_wrath_cookie_clicking_enabled=lambda value: globals().__setitem__("wrath_cookie_clicking_enabled", value),
             get_building_autobuy_enabled=lambda: building_autobuy_enabled,
             set_building_autobuy_enabled=lambda value: globals().__setitem__("building_autobuy_enabled", value),
             get_lucky_reserve_enabled=lambda: lucky_reserve_enabled,
@@ -2897,6 +2916,8 @@ def _get_bot_controls():
             set_ascension_prep_enabled=lambda value: globals().__setitem__("ascension_prep_enabled", value),
             get_stock_trading_enabled=lambda: stock_trading_enabled,
             set_stock_trading_enabled=lambda value: globals().__setitem__("stock_trading_enabled", value),
+            get_garden_automation_enabled=lambda: garden_automation_enabled,
+            set_garden_automation_enabled=lambda value: globals().__setitem__("garden_automation_enabled", value),
             get_lifecycle=_get_bot_lifecycle,
             set_click_thread=lambda value: globals().__setitem__("click_thread", value),
             building_autobuyer=building_autobuyer,
@@ -3066,6 +3087,7 @@ def _get_dom_loop_services():
             record_shimmer_outcome=_record_shimmer_outcome,
             record_shimmer_click_runtime=_record_shimmer_click_runtime,
             record_shimmer_collect_runtime=_record_shimmer_collect_runtime,
+            overlay_event_sender=overlay_event_emitter.send_shimmer_spawn,
             get_pending_hand_shimmer=spell_autocaster.get_pending_hand_shimmer,
             clear_pending_hand_shimmer=spell_autocaster.clear_pending_hand_shimmer,
             recent_shimmer_clicks=recent_shimmer_clicks,
@@ -3074,6 +3096,7 @@ def _get_dom_loop_services():
             pending_shimmer_results=pending_shimmer_results,
             shimmer_click_delay_seconds=SHIMMER_CLICK_DELAY_SECONDS,
             shimmer_click_cooldown=SHIMMER_CLICK_COOLDOWN,
+            overlay_click_delay_seconds=OVERLAY_SHIMMER_CLICK_DELAY_SECONDS,
             combo_pending_getter=godzamok_combo.has_pending,
         )
     return dom_loop_services
@@ -3149,6 +3172,10 @@ def toggle_shimmer_autoclick(e=None, source="hud_button"):
     _get_bot_controls().toggle_shimmer_autoclick(source=source)
 
 
+def toggle_wrath_cookie_clicking(e=None, source="hud_button"):
+    _get_bot_controls().toggle_wrath_cookie_clicking(source=source)
+
+
 def toggle_building_autobuy(e=None, source="hotkey"):
     _get_bot_controls().toggle_building_autobuy(source=source)
 
@@ -3183,6 +3210,10 @@ def set_building_cap_ignored(building_name, ignored):
 
 def toggle_stock_trading(e=None, source="hotkey"):
     _get_bot_controls().toggle_stock_trading(source=source)
+
+
+def toggle_garden_automation(e=None, source="hud_button"):
+    _get_bot_controls().toggle_garden_automation(source=source)
 
 
 def cycle_wrinkler_mode(e=None):

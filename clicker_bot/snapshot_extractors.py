@@ -1,6 +1,43 @@
 from typing import Any, Callable
 
 
+def _coerce_positive_int(value: Any) -> int | None:
+    try:
+        result = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    return result if result > 0 else None
+
+
+def _extract_viewport(snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        return {}
+    viewport = snapshot.get("viewport")
+    if not isinstance(viewport, dict):
+        viewport = {}
+    width = _coerce_positive_int(
+        viewport.get("width")
+        if viewport.get("width") is not None
+        else snapshot.get("viewportWidth")
+    )
+    height = _coerce_positive_int(
+        viewport.get("height")
+        if viewport.get("height") is not None
+        else snapshot.get("viewportHeight")
+    )
+    try:
+        device_pixel_ratio = float(viewport.get("devicePixelRatio", snapshot.get("devicePixelRatio", 1.0)))
+    except (TypeError, ValueError):
+        device_pixel_ratio = 1.0
+    result: dict[str, Any] = {}
+    if width is not None:
+        result["viewport_width"] = width
+    if height is not None:
+        result["viewport_height"] = height
+    result["device_pixel_ratio"] = device_pixel_ratio
+    return result
+
+
 def normalize_snapshot_target(
     rect: dict[str, Any] | None,
     to_screen_point: Callable[[int, int], tuple[int, int]],
@@ -76,6 +113,9 @@ def extract_shimmers(
     if not snapshot:
         return items
     seed = snapshot.get("seed")
+    viewport = _extract_viewport(snapshot)
+    viewport_width = viewport.get("viewport_width")
+    viewport_height = viewport.get("viewport_height")
     for shimmer in snapshot.get("shimmers", []):
         if not isinstance(shimmer, dict):
             continue
@@ -93,10 +133,51 @@ def extract_shimmers(
             "screen_y": point["screen_y"],
             "life": shimmer.get("life"),
             "dur": shimmer.get("dur"),
+            "spawn_lead": bool(shimmer.get("spawnLead")),
+            "no_count": bool(shimmer.get("noCount")),
+            "force": shimmer.get("force"),
+            "force_obj_type": shimmer.get("forceObjType"),
         }
+        if viewport:
+            item.update(viewport)
+        if viewport_width and viewport_height:
+            item["target_norm_x"] = point["client_x"] / viewport_width
+            item["target_norm_y"] = point["client_y"] / viewport_height
         if seed:
             item["seed"] = seed
         items.append(item)
+    fortune = snapshot.get("fortune")
+    if isinstance(fortune, dict):
+        point = normalize_snapshot_target(fortune, to_screen_point)
+        fortune_id = fortune.get("id")
+        if point is not None and fortune_id is not None:
+            item = {
+                "id": int(fortune_id),
+                "type": "fortune",
+                "wrath": False,
+                "client_x": point["client_x"],
+                "client_y": point["client_y"],
+                "screen_x": point["screen_x"],
+                "screen_y": point["screen_y"],
+                "life": fortune.get("life"),
+                "dur": fortune.get("dur"),
+                "spawn_lead": False,
+                "no_count": True,
+                "force": fortune.get("effectName"),
+                "force_obj_type": fortune.get("effectKind"),
+                "effect_kind": fortune.get("effectKind"),
+                "effect_name": fortune.get("effectName"),
+                "effect_id": fortune.get("effectId"),
+                "text": fortune.get("text"),
+            }
+            if viewport:
+                item.update(viewport)
+            if viewport_width and viewport_height:
+                item["target_norm_x"] = point["client_x"] / viewport_width
+                item["target_norm_y"] = point["client_y"] / viewport_height
+            if seed:
+                item["seed"] = seed
+            items.append(item)
     return items
 
 

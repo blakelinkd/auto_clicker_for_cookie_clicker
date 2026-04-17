@@ -19,9 +19,10 @@ class DashboardStateBuilderTests(unittest.TestCase):
                 upgrade_autobuy_enabled=True,
                 ascension_prep_enabled=False,
                 garden_automation_enabled=True,
-                main_cookie_clicking_enabled=True,
-                shimmer_autoclick_enabled=True,
-            )
+            main_cookie_clicking_enabled=True,
+            shimmer_autoclick_enabled=True,
+            wrath_cookie_clicking_enabled=True,
+        )
         )
         store.update(active=True, last_shimmer_telemetry={"blockedCount": 2, "lastChoice": "golden"})
         store.append_recent_event("one")

@@ -6,7 +6,7 @@ from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 
-project_root = Path(SPECPATH).parent.resolve()
+project_root = Path.cwd()
 cookie_mod_src = project_root / 'cookie_shimmer_bridge_mod'
 qt_hud_src = project_root / 'qt_hud'
 
@@ -24,7 +24,7 @@ pyautogui_datas = [(str(pyautogui_path), 'pyautogui')]
 keyboard_submodules = collect_submodules('keyboard')
 
 a = Analysis(
-    ['main.py'],
+    [str(project_root / 'main.py')],
     pathex=[str(project_root)],
     binaries=[],
     datas=[

@@ -35,9 +35,10 @@ class JsonMockCallbacks:
         self.state.setdefault("building_autobuy_enabled", True)
         self.state.setdefault("upgrade_autobuy_enabled", True)
         self.state.setdefault("ascension_prep_enabled", False)
-        self.state.setdefault("garden_automation_enabled", True)
+        self.state.setdefault("garden_automation_enabled", False)  # Off by default
         self.state.setdefault("main_cookie_clicking_enabled", True)
         self.state.setdefault("shimmer_autoclick_enabled", True)
+        self.state.setdefault("wrath_cookie_clicking_enabled", True)
         self.state.setdefault("wrinkler_mode", "auto")
 
     def get_dashboard_state(self):
@@ -63,6 +64,10 @@ class JsonMockCallbacks:
         self.state["shimmer_autoclick_enabled"] = not self.state["shimmer_autoclick_enabled"]
         print(f"Toggle shimmer autoclick -> {self.state['shimmer_autoclick_enabled']}")
 
+    def toggle_wrath_cookie_clicking(self):
+        self.state["wrath_cookie_clicking_enabled"] = not self.state["wrath_cookie_clicking_enabled"]
+        print(f"Toggle wrath cookie clicking -> {self.state['wrath_cookie_clicking_enabled']}")
+
     def toggle_stock_buying(self):
         self.state["stock_trading_enabled"] = not self.state["stock_trading_enabled"]
         print(f"Toggle stock buying -> {self.state['stock_trading_enabled']}")
@@ -82,6 +87,10 @@ class JsonMockCallbacks:
     def toggle_ascension_prep(self):
         self.state["ascension_prep_enabled"] = not self.state["ascension_prep_enabled"]
         print(f"Toggle ascension prep -> {self.state['ascension_prep_enabled']}")
+
+    def toggle_garden_automation(self):
+        self.state["garden_automation_enabled"] = not self.state["garden_automation_enabled"]
+        print(f"Toggle garden automation -> {self.state['garden_automation_enabled']}")
 
     def set_upgrade_horizon_seconds(self, value):
         print(f"Set upgrade horizon seconds -> {value}")
@@ -124,11 +133,13 @@ def main():
         toggle_active=callbacks.toggle_active,
         toggle_main_autoclick=callbacks.toggle_main_autoclick,
         toggle_shimmer_autoclick=callbacks.toggle_shimmer_autoclick,
+        toggle_wrath_cookie_clicking=callbacks.toggle_wrath_cookie_clicking,
         toggle_stock_buying=callbacks.toggle_stock_buying,
         toggle_lucky_reserve=callbacks.toggle_lucky_reserve,
         toggle_building_buying=callbacks.toggle_building_buying,
         toggle_upgrade_buying=callbacks.toggle_upgrade_buying,
         toggle_ascension_prep=callbacks.toggle_ascension_prep,
+        toggle_garden_automation=callbacks.toggle_garden_automation,
         set_upgrade_horizon_seconds=callbacks.set_upgrade_horizon_seconds,
         set_building_horizon_seconds=callbacks.set_building_horizon_seconds,
         set_building_cap=callbacks.set_building_cap,

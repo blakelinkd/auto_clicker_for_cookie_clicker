@@ -25,6 +25,8 @@ class BotControls:
         set_main_cookie_clicking_enabled,
         get_shimmer_autoclick_enabled,
         set_shimmer_autoclick_enabled,
+        get_wrath_cookie_clicking_enabled,
+        set_wrath_cookie_clicking_enabled,
         get_building_autobuy_enabled,
         set_building_autobuy_enabled,
         get_lucky_reserve_enabled,
@@ -35,6 +37,8 @@ class BotControls:
         set_ascension_prep_enabled,
         get_stock_trading_enabled,
         set_stock_trading_enabled,
+        get_garden_automation_enabled,
+        set_garden_automation_enabled,
         get_lifecycle,
         set_click_thread,
         building_autobuyer,
@@ -51,6 +55,8 @@ class BotControls:
         self.set_main_cookie_clicking_enabled = set_main_cookie_clicking_enabled
         self.get_shimmer_autoclick_enabled = get_shimmer_autoclick_enabled
         self.set_shimmer_autoclick_enabled = set_shimmer_autoclick_enabled
+        self.get_wrath_cookie_clicking_enabled = get_wrath_cookie_clicking_enabled
+        self.set_wrath_cookie_clicking_enabled = set_wrath_cookie_clicking_enabled
         self.get_building_autobuy_enabled = get_building_autobuy_enabled
         self.set_building_autobuy_enabled = set_building_autobuy_enabled
         self.get_lucky_reserve_enabled = get_lucky_reserve_enabled
@@ -61,6 +67,8 @@ class BotControls:
         self.set_ascension_prep_enabled = set_ascension_prep_enabled
         self.get_stock_trading_enabled = get_stock_trading_enabled
         self.set_stock_trading_enabled = set_stock_trading_enabled
+        self.get_garden_automation_enabled = get_garden_automation_enabled
+        self.set_garden_automation_enabled = set_garden_automation_enabled
         self.get_lifecycle = get_lifecycle
         self.set_click_thread = set_click_thread
         self.building_autobuyer = building_autobuyer
@@ -102,6 +110,18 @@ class BotControls:
                 feature_name="Golden/wrath autoclick",
                 runtime_key="shimmer_autoclick_enabled",
                 event_label="Golden/wrath autoclick",
+            ),
+            source=source,
+        )
+
+    def toggle_wrath_cookie_clicking(self, *, source="hud_button"):
+        return self._toggle_flag(
+            self.get_wrath_cookie_clicking_enabled(),
+            self.set_wrath_cookie_clicking_enabled,
+            ToggleBinding(
+                feature_name="Wrath cookie clicking",
+                runtime_key="wrath_cookie_clicking_enabled",
+                event_label="Wrath cookie clicking",
             ),
             source=source,
         )
@@ -168,6 +188,18 @@ class BotControls:
             source=source,
         )
         return next_value
+
+    def toggle_garden_automation(self, *, source="hud_button"):
+        return self._toggle_flag(
+            self.get_garden_automation_enabled(),
+            self.set_garden_automation_enabled,
+            ToggleBinding(
+                feature_name="Garden automation",
+                runtime_key="garden_automation_enabled",
+                event_label="Garden automation",
+            ),
+            source=source,
+        )
 
     def set_building_cap(self, building_name, cap):
         try:

@@ -1376,6 +1376,7 @@ class DomShimmerHandlerTests(unittest.TestCase):
             "click_runtime": [],
             "collect_runtime": [],
             "cleared": [],
+            "overlay": [],
         }
         defaults = {
             "log": _LogStub(),
@@ -1395,6 +1396,7 @@ class DomShimmerHandlerTests(unittest.TestCase):
             "record_event": lambda message: calls["events"].append(message),
             "record_shimmer_click_runtime": lambda shimmer_id, mode: calls["click_runtime"].append((shimmer_id, mode)),
             "record_shimmer_collect_runtime": lambda kind, shimmer_id, outcome, blocked: calls["collect_runtime"].append((kind, shimmer_id, outcome, blocked)),
+            "overlay_event_sender": lambda shimmer, **kwargs: calls["overlay"].append((shimmer, kwargs)),
             "get_pending_hand_shimmer": lambda shimmers, now=None: None,
             "clear_pending_hand_shimmer": lambda shimmer_id: calls["cleared"].append(shimmer_id),
             "recent_shimmer_clicks": {},
@@ -1406,6 +1408,7 @@ class DomShimmerHandlerTests(unittest.TestCase):
             "feed_poll_interval": 0.08,
             "shimmer_click_delay_seconds": 1.2,
             "shimmer_click_cooldown": 0.12,
+            "overlay_click_delay_seconds": 0.0,
         }
         defaults.update(overrides)
         return DomShimmerHandler(**defaults), calls
@@ -1487,6 +1490,7 @@ class DomShimmerHandlerTests(unittest.TestCase):
         self.assertTrue(result.handled)
         self.assertEqual(calls["clicks"], [(30, 40, {"hold": 0.035})])
         self.assertEqual(calls["click_runtime"], [(11, "planned")])
+        self.assertEqual(calls["overlay"], [(priority, {"mode": "planned", "clicked_at": 15.0})])
         self.assertEqual(calls["sleep"], [0.08])
         self.assertEqual(recent[11], 15.0)
         self.assertEqual(attempts[11]["attempts"], 1)
@@ -1513,6 +1517,165 @@ class DomShimmerHandlerTests(unittest.TestCase):
         self.assertFalse(result.handled)
         self.assertEqual(calls["profiles"], [("dom_shimmer", 500.0, 20.0)])
         self.assertEqual(calls["sleep"], [])
+
+    def test_process_clicks_scan_shimmer_and_emits_overlay_event(self):
+        shimmer = {
+            "id": 12,
+            "type": "golden",
+            "wrath": False,
+            "client_x": 40,
+            "client_y": 50,
+            "screen_x": 140,
+            "screen_y": 250,
+            "life": 10,
+            "dur": 20,
+            "target_norm_x": 0.25,
+            "target_norm_y": 0.50,
+        }
+        handler, calls = self._handler(shimmer_first_seen={12: 8.0})
+
+        result = handler.process(
+            DomShimmerContext(
+                snapshot={},
+                shimmers=[shimmer],
+                buffs=[],
+                now=10.0,
+                pause_value_actions_during_clot=False,
+                shimmer_autoclick_enabled=True,
+                last_seen_golden_decision=None,
+                suppress_main_click_until=0.0,
+            )
+        )
+
+        self.assertTrue(result.handled)
+        self.assertEqual(calls["clicks"], [(140, 250, {"hold": 0.035})])
+        self.assertEqual(calls["overlay"], [(shimmer, {"mode": "clicked", "clicked_at": 15.0})])
+
+    def test_process_delays_single_shimmer_click_after_overlay_preview(self):
+        shimmer = {
+            "id": 12,
+            "type": "golden",
+            "wrath": False,
+            "client_x": 40,
+            "client_y": 50,
+            "screen_x": 140,
+            "screen_y": 250,
+            "life": 10,
+            "dur": 20,
+            "target_norm_x": 0.25,
+            "target_norm_y": 0.50,
+        }
+        handler, calls = self._handler(
+            shimmer_first_seen={12: 8.0},
+            overlay_click_delay_seconds=1.0,
+        )
+
+        first = handler.process(
+            DomShimmerContext(
+                snapshot={},
+                shimmers=[shimmer],
+                buffs=[],
+                now=10.0,
+                pause_value_actions_during_clot=False,
+                shimmer_autoclick_enabled=True,
+                last_seen_golden_decision=None,
+                suppress_main_click_until=0.0,
+            )
+        )
+        second = handler.process(
+            DomShimmerContext(
+                snapshot={},
+                shimmers=[shimmer],
+                buffs=[],
+                now=11.1,
+                pause_value_actions_during_clot=False,
+                shimmer_autoclick_enabled=True,
+                last_seen_golden_decision=None,
+                suppress_main_click_until=first.suppress_main_click_until,
+            )
+        )
+
+        self.assertTrue(first.handled)
+        self.assertTrue(second.handled)
+        self.assertEqual(calls["overlay"], [(shimmer, {"mode": "clicked_preview", "clicked_at": 10.0})])
+        self.assertEqual(calls["clicks"], [(140, 250, {"hold": 0.035})])
+
+    def test_process_clicks_multiple_shimmers_without_overlay_delay(self):
+        first_shimmer = {
+            "id": 12,
+            "type": "golden",
+            "wrath": False,
+            "client_x": 40,
+            "client_y": 50,
+            "screen_x": 140,
+            "screen_y": 250,
+            "life": 10,
+            "dur": 20,
+            "target_norm_x": 0.25,
+            "target_norm_y": 0.50,
+        }
+        second_shimmer = dict(first_shimmer, id=13, screen_x=160, screen_y=270, wrath=True)
+        handler, calls = self._handler(
+            shimmer_first_seen={12: 8.0, 13: 8.0},
+            overlay_click_delay_seconds=1.0,
+        )
+
+        result = handler.process(
+            DomShimmerContext(
+                snapshot={},
+                shimmers=[first_shimmer, second_shimmer],
+                buffs=[],
+                now=10.0,
+                pause_value_actions_during_clot=False,
+                shimmer_autoclick_enabled=True,
+                last_seen_golden_decision=None,
+                suppress_main_click_until=0.0,
+            )
+        )
+
+        self.assertTrue(result.handled)
+        self.assertEqual(calls["clicks"], [(140, 250, {"hold": 0.035})])
+        self.assertEqual(calls["overlay"], [(first_shimmer, {"mode": "clicked", "clicked_at": 15.0})])
+
+    def test_process_clicks_fortune_without_full_shimmer_delay(self):
+        fortune = {
+            "id": -100042,
+            "type": "fortune",
+            "wrath": False,
+            "client_x": 300,
+            "client_y": 40,
+            "screen_x": 400,
+            "screen_y": 240,
+            "life": 450,
+            "dur": 500,
+            "effect_kind": "upgrade",
+            "effect_name": "Fortune #001",
+            "text": "Fortune #001 : Remember to take breaks.",
+        }
+        pending = {}
+        handler, calls = self._handler(
+            shimmer_first_seen={-100042: 9.80},
+            pending_shimmer_results=pending,
+        )
+
+        result = handler.process(
+            DomShimmerContext(
+                snapshot={},
+                shimmers=[fortune],
+                buffs=[],
+                now=10.0,
+                pause_value_actions_during_clot=False,
+                shimmer_autoclick_enabled=True,
+                last_seen_golden_decision=None,
+                suppress_main_click_until=0.0,
+            )
+        )
+
+        self.assertTrue(result.handled)
+        self.assertEqual(calls["clicks"], [(400, 240, {"hold": 0.035})])
+        self.assertEqual(calls["click_runtime"], [(-100042, "clicked")])
+        self.assertEqual(pending[-100042]["type"], "fortune")
+        self.assertEqual(pending[-100042]["effect_name"], "Fortune #001")
 
 
 class DomActionCoordinatorTests(unittest.TestCase):

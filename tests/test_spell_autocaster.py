@@ -70,8 +70,8 @@ class SpellAutocasterResurrectAbominationTests(unittest.TestCase):
         diag = self.autocaster.get_diagnostics(self._resurrect_snapshot(), _identity_point)
 
         self.assertIsNone(action)
-        self.assertEqual(diag["reason"], "resurrect_abomination_disabled")
-        self.assertIsNone(diag["candidate"])
+        self.assertEqual(diag["reason"], "waiting_for_long_buff")
+        self.assertEqual(diag["candidate"], "click frenzy")
 
     def test_stretch_time_targets_cookie_storm(self):
         state = {
@@ -195,7 +195,7 @@ class SpellAutocasterResurrectAbominationTests(unittest.TestCase):
         self.assertIsNotNone(action)
         self.assertEqual(action.kind, "open_grimoire")
 
-    def test_casts_crafty_pixies_for_large_dragon_floor_buy(self):
+    def test_does_not_cast_crafty_pixies_for_large_dragon_floor_buy(self):
         building_diag = {
             "reason": "dragon_building_floor_ready",
             "candidate": "Bank",
@@ -214,9 +214,7 @@ class SpellAutocasterResurrectAbominationTests(unittest.TestCase):
             building_diag=building_diag,
         )
 
-        self.assertIsNotNone(action)
-        self.assertEqual(action.key, CRAFTY_PIXIES_KEY)
-        self.assertEqual(action.reason, "discount_Bank")
+        self.assertIsNone(action)
 
     def test_skips_crafty_pixies_for_large_regular_buy(self):
         building_diag = {
@@ -258,7 +256,7 @@ class SpellAutocasterResurrectAbominationTests(unittest.TestCase):
 
         self.assertIsNone(action)
 
-    def test_casts_crafty_pixies_for_matching_active_building_buff(self):
+    def test_does_not_cast_crafty_pixies_for_matching_active_building_buff(self):
         building_diag = {
             "reason": "buy_ready",
             "candidate": "Mine",
@@ -290,11 +288,9 @@ class SpellAutocasterResurrectAbominationTests(unittest.TestCase):
             building_diag=building_diag,
         )
 
-        self.assertIsNotNone(action)
-        self.assertEqual(action.key, CRAFTY_PIXIES_KEY)
-        self.assertEqual(action.reason, "discount_Mine")
-        self.assertEqual(diag["reason"], "crafty_pixies_ready")
-        self.assertEqual(diag["crafty_pixies_target"], "Mine")
+        self.assertIsNone(action)
+        self.assertEqual(diag["reason"], "hand_of_fate_missing")
+        self.assertIsNone(diag["crafty_pixies_target"])
 
     def test_skips_crafty_pixies_during_reactive_combo_stack(self):
         building_diag = {
@@ -356,7 +352,7 @@ class SpellAutocasterResurrectAbominationTests(unittest.TestCase):
         self.assertIsNotNone(target)
         self.assertEqual(target["id"], 12)
 
-    def test_casts_hand_of_fate_for_positive_economic_outcome(self):
+    def test_waits_for_long_buff_before_casting_hand_of_fate_for_positive_economic_outcome(self):
         snapshot = {
             "spellbook": {
                 "onMinigame": True,
@@ -392,10 +388,8 @@ class SpellAutocasterResurrectAbominationTests(unittest.TestCase):
         action = self.autocaster.get_action(snapshot, _identity_point, now=10.0)
         diag = self.autocaster.get_diagnostics(snapshot, _identity_point)
 
-        self.assertIsNotNone(action)
-        self.assertEqual(action.key, HAND_OF_FATE_KEY)
-        self.assertEqual(action.reason, "spawn_building_special")
-        self.assertEqual(diag["reason"], "hand_of_fate_economic_ready")
+        self.assertIsNone(action)
+        self.assertEqual(diag["reason"], "waiting_for_long_buff")
 
     def test_casts_hand_of_fate_to_stack_building_special_on_frenzy(self):
         snapshot = {
@@ -436,7 +430,8 @@ class SpellAutocasterResurrectAbominationTests(unittest.TestCase):
         self.assertIsNotNone(action)
         self.assertEqual(action.key, HAND_OF_FATE_KEY)
         self.assertEqual(action.reason, "spawn_building_special")
-        self.assertEqual(diag["reason"], "hand_of_fate_combo_ready")
+        self.assertEqual(diag["reason"], "hand_of_fate_ready_on_long_buff")
+        self.assertEqual(diag["long_running_buffs"], ("Frenzy",))
 
     def test_casts_hand_of_fate_to_stack_frenzy_on_building_special(self):
         snapshot = {
@@ -477,7 +472,46 @@ class SpellAutocasterResurrectAbominationTests(unittest.TestCase):
         self.assertEqual(action.key, HAND_OF_FATE_KEY)
         self.assertEqual(action.reason, "spawn_frenzy")
 
-    def test_does_not_cast_duplicate_frenzy_into_existing_frenzy(self):
+    def test_waits_for_mana_before_casting_hand_of_fate_on_long_buff(self):
+        snapshot = {
+            "spellbook": {
+                "onMinigame": True,
+                "magic": 8.0,
+                "maxMagic": 100.0,
+                "spells": [
+                    {
+                        "id": 1,
+                        "key": HAND_OF_FATE_KEY,
+                        "name": "Hand of Fate",
+                        "cost": 10.0,
+                        "failChance": 0.15,
+                        "ready": False,
+                        "rect": {"centerX": 10, "centerY": 20},
+                    }
+                ],
+                "activeBuffs": [{"name": "Frenzy", "time": 50.0}],
+                "handOfFateForecast": {
+                    "outcome": "building special",
+                    "backfire": False,
+                    "failChance": 0.15,
+                    "castIndex": 10,
+                },
+            },
+            "wrinklers": {
+                "elderWrath": 0,
+                "openSlots": 10,
+                "attached": 0,
+                "max": 10,
+            },
+        }
+
+        action = self.autocaster.get_action(snapshot, _identity_point, now=10.0)
+        diag = self.autocaster.get_diagnostics(snapshot, _identity_point)
+
+        self.assertIsNone(action)
+        self.assertEqual(diag["reason"], "waiting_for_hand_of_fate_mana")
+
+    def test_casts_hand_of_fate_without_filtering_duplicate_forecast_buff(self):
         snapshot = {
             "spellbook": {
                 "onMinigame": True,
@@ -513,8 +547,10 @@ class SpellAutocasterResurrectAbominationTests(unittest.TestCase):
         action = self.autocaster.get_action(snapshot, _identity_point, now=10.0)
         diag = self.autocaster.get_diagnostics(snapshot, _identity_point)
 
-        self.assertIsNone(action)
-        self.assertEqual(diag["reason"], "hand_of_fate_waiting_for_stack_roll")
+        self.assertIsNotNone(action)
+        self.assertEqual(action.key, HAND_OF_FATE_KEY)
+        self.assertEqual(action.reason, "spawn_frenzy")
+        self.assertEqual(diag["reason"], "hand_of_fate_ready_on_long_buff")
 
     def test_stretch_time_does_not_preempt_ready_hand_combo(self):
         snapshot = {

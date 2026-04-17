@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-4";
+  const assetVersion = "snake-heat-7";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const sounds = {
@@ -36,6 +36,8 @@
   };
   const combatLog = [];
   let lastDurgularYell = 0;
+  let bidenSpawnCount = 0;
+  const biotachyonicWhisper = "it's supposed to look like biden is popping the cookies...";
   const bidenFocusLines = [
     "Oh, it's focused.",
     "I'd say it's... I think it's...",
@@ -192,14 +194,21 @@
       cell: targetToCell(normX, normY),
       startedAt: performance.now(),
     });
-    queueBidenFocusTalk(performance.now());
+    const now = performance.now();
+    bidenSpawnCount += 1;
+    queueBidenFocusTalk(now);
+    if (bidenSpawnCount % 10 === 0) {
+      addCombatLogLine("biotachyonic", biotachyonicWhisper, now + 350, "whisper");
+    }
     playSound(sounds.dean);
     return true;
   }
 
   function queueBidenFocusTalk(now) {
+    let lineAt = now;
     for (let i = 0; i < bidenFocusLines.length; i += 1) {
-      addCombatLogLine("biden", bidenFocusLines[i], now + i * 850);
+      addCombatLogLine("biden", bidenFocusLines[i], lineAt);
+      lineAt += 1000 + Math.random() * 1000;
     }
   }
 
@@ -307,8 +316,8 @@
     };
   }
 
-  function addCombatLogLine(speaker, text, now) {
-    combatLog.push({ speaker, text, startedAt: now });
+  function addCombatLogLine(speaker, text, now, channel = "say") {
+    combatLog.push({ speaker, text, startedAt: now, channel });
     while (combatLog.length > 18) {
       combatLog.shift();
     }
@@ -816,10 +825,12 @@
       const age = Math.max(0, now - line.startedAt);
       const alpha = Math.max(0.62, Math.min(1, 1 - age / 30000));
       if (line.showSpeaker) {
+        ctx.font = `600 ${fontSize}px Verdana, Geneva, sans-serif`;
         ctx.fillStyle = speakerColor(line.speaker, alpha);
         ctx.fillText(line.speakerLabel, contentX, lineY, contentWidth);
       }
-      ctx.fillStyle = `rgba(255, 236, 177, ${alpha})`;
+      ctx.font = messageFont(line.channel, fontSize);
+      ctx.fillStyle = messageColor(line.channel, alpha);
       ctx.fillText(line.text, contentX + line.textOffset, lineY, contentWidth - line.textOffset);
       lineY += lineHeight;
     }
@@ -857,6 +868,7 @@
               textOffset,
               showSpeaker,
               startedAt: entry.startedAt,
+              channel: entry.channel,
             });
             showSpeaker = false;
             textOffset = 18;
@@ -877,6 +889,7 @@
           textOffset,
           showSpeaker,
           startedAt: entry.startedAt,
+          channel: entry.channel,
         });
         current = word;
         showSpeaker = false;
@@ -891,15 +904,27 @@
         textOffset,
         showSpeaker,
         startedAt: entry.startedAt,
+        channel: entry.channel,
       });
     }
     return lines;
   }
 
   function speakerColor(speaker, alpha) {
-    if (speaker === "biden") return `rgba(106, 166, 255, ${alpha})`;
-    if (speaker === "durgular") return `rgba(190, 128, 255, ${alpha})`;
-    return `rgba(255, 92, 92, ${alpha})`;
+    if (speaker === "biden") return `rgba(170, 211, 114, ${alpha})`;
+    if (speaker === "durgular") return `rgba(198, 155, 109, ${alpha})`;
+    if (speaker === "biotachyonic") return `rgba(255, 124, 10, ${alpha})`;
+    return `rgba(135, 136, 238, ${alpha})`;
+  }
+
+  function messageColor(channel, alpha) {
+    if (channel === "whisper") return `rgba(255, 128, 255, ${alpha})`;
+    return `rgba(255, 236, 177, ${alpha})`;
+  }
+
+  function messageFont(channel, fontSize) {
+    const style = channel === "whisper" ? "italic " : "";
+    return `${style}600 ${fontSize}px Verdana, Geneva, sans-serif`;
   }
 
   function splitLongWord(word, maxWidth) {

@@ -19,6 +19,7 @@ class RuntimeConfig:
     garden_automation_enabled: bool
     main_cookie_clicking_enabled: bool
     shimmer_autoclick_enabled: bool
+    wrath_cookie_clicking_enabled: bool
 
 
 class RuntimeStore:
@@ -72,6 +73,7 @@ class RuntimeStore:
             "garden_automation_enabled": config.garden_automation_enabled,
             "main_cookie_clicking_enabled": config.main_cookie_clicking_enabled,
             "shimmer_autoclick_enabled": config.shimmer_autoclick_enabled,
+            "wrath_cookie_clicking_enabled": config.wrath_cookie_clicking_enabled,
             "active": False,
             "feed_load_ms": None,
             "feed_parse_ms": None,

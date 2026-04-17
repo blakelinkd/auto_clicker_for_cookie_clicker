@@ -104,6 +104,7 @@ class BotDashboard:
         toggle_building_buying,
         toggle_upgrade_buying,
         toggle_ascension_prep,
+        toggle_garden_automation,
         set_upgrade_horizon_seconds,
         set_building_horizon_seconds,
         set_building_cap,
@@ -125,6 +126,7 @@ class BotDashboard:
         self.toggle_building_buying = toggle_building_buying
         self.toggle_upgrade_buying = toggle_upgrade_buying
         self.toggle_ascension_prep = toggle_ascension_prep
+        self.toggle_garden_automation = toggle_garden_automation
         self.set_upgrade_horizon_seconds = set_upgrade_horizon_seconds
         self.set_building_horizon_seconds = set_building_horizon_seconds
         self.set_building_cap = set_building_cap

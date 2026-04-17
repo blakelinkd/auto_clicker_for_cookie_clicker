@@ -25,8 +25,8 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
-DIST_DIR = PROJECT_ROOT / "installer" / "dist"
-BUILD_DIR = PROJECT_ROOT / "installer" / "build"
+DIST_DIR = PROJECT_ROOT / "dist"
+BUILD_DIR = PROJECT_ROOT / "build"
 SPEC_FILE = PROJECT_ROOT / "installer" / "pyinstaller.spec"
 INNO_SETUP_SCRIPT = PROJECT_ROOT / "installer" / "installer.iss"
 
@@ -187,11 +187,12 @@ def verify_build():
     """Verify the build outputs exist."""
     print("\n=== Verifying Build ===")
     
-    pyinstaller_exe = DIST_DIR / "main" / "CookieClickerAutoClicker.exe"
+    pyinstaller_exe = PROJECT_ROOT / "dist" / "main" / "CookieClickerAutoClicker.exe"
     if pyinstaller_exe.exists():
-        print(f"✓ Frozen exe: {pyinstaller_exe}")
+        print(f"[OK] Frozen exe: {pyinstaller_exe}")
+        return True
     else:
-        print(f"✗ Frozen exe not found: {pyinstaller_exe}")
+        print(f"[FAIL] Frozen exe not found: {pyinstaller_exe}")
     
     installer_exe = INSTALLER_OUTPUT_DIR / "CookieClickerAutoClicker_Setup.exe"
     if installer_exe.exists():

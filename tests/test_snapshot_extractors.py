@@ -90,6 +90,52 @@ class SnapshotExtractorTests(unittest.TestCase):
         self.assertEqual(shimmers[0]["screen_x"], 110)
         self.assertEqual(shimmers[0]["screen_y"], 220)
 
+    def test_extract_shimmers_adds_viewport_and_normalized_target(self):
+        shimmers = extract_shimmers(
+            {
+                "viewport": {"width": 1280, "height": 720, "devicePixelRatio": 1.25},
+                "shimmers": [
+                    {"id": 1, "clickX": 640, "clickY": 180, "type": "golden"},
+                ],
+            },
+            to_screen_point=self._to_screen_point,
+        )
+
+        self.assertEqual(shimmers[0]["viewport_width"], 1280)
+        self.assertEqual(shimmers[0]["viewport_height"], 720)
+        self.assertEqual(shimmers[0]["device_pixel_ratio"], 1.25)
+        self.assertAlmostEqual(shimmers[0]["target_norm_x"], 0.5)
+        self.assertAlmostEqual(shimmers[0]["target_norm_y"], 0.25)
+
+    def test_extract_shimmers_adds_fortune_ticker_target(self):
+        shimmers = extract_shimmers(
+            {
+                "seed": "abc123",
+                "fortune": {
+                    "id": -100042,
+                    "clickX": 300,
+                    "clickY": 40,
+                    "life": 450,
+                    "dur": 500,
+                    "effectKind": "upgrade",
+                    "effectName": "Fortune #001",
+                    "effectId": 621,
+                    "text": "Fortune #001 : Remember to take breaks.",
+                },
+            },
+            to_screen_point=self._to_screen_point,
+        )
+
+        self.assertEqual(len(shimmers), 1)
+        self.assertEqual(shimmers[0]["id"], -100042)
+        self.assertEqual(shimmers[0]["type"], "fortune")
+        self.assertFalse(shimmers[0]["wrath"])
+        self.assertTrue(shimmers[0]["no_count"])
+        self.assertEqual(shimmers[0]["effect_name"], "Fortune #001")
+        self.assertEqual(shimmers[0]["screen_x"], 400)
+        self.assertEqual(shimmers[0]["screen_y"], 240)
+        self.assertEqual(shimmers[0]["seed"], "abc123")
+
     def test_extract_buffs_falls_back_to_spellbook_active_buffs(self):
         buffs = extract_buffs(
             {

@@ -538,9 +538,55 @@ Game.registerMod("shimmer bridge", {
 						rawCenterY: rect.rawCenterY,
 						life: typeof s.life === "number" ? s.life : null,
 						dur: typeof s.dur === "number" ? s.dur : null,
+						spawnLead: !!s.spawnLead,
+						noCount: !!s.noCount,
+						force: typeof s.force === "string" && s.force ? s.force : null,
+						forceObjType: s.forceObj && typeof s.forceObj.type === "string" ? s.forceObj.type : null,
 					};
 				})
 				.filter(Boolean);
+		};
+
+		const getFortuneData = () => {
+			if (!Game || !Game.TickerEffect || Game.TickerEffect.type !== "fortune") return null;
+			const tickerEl = Game.tickerL || document.getElementById("commentsText1");
+			if (!tickerEl) return null;
+			let fortuneEl = null;
+			try {
+				fortuneEl = tickerEl.querySelector ? tickerEl.querySelector(".fortune") : null;
+			} catch (err) {
+				fortuneEl = null;
+			}
+			const rect = getRect(fortuneEl || tickerEl);
+			if (!rect) return null;
+			const effect = Game.TickerEffect.sub;
+			const effectKind =
+				effect === "fortuneGC" || effect === "fortuneCPS"
+					? effect
+					: effect && typeof effect.name === "string"
+						? "upgrade"
+						: null;
+			return {
+				id: -100000 - (typeof Game.TickerN === "number" ? Game.TickerN : 0),
+				type: "fortune",
+				wrath: false,
+				width: rect.width,
+				height: rect.height,
+				left: rect.left,
+				top: rect.top,
+				centerX: rect.centerX,
+				centerY: rect.centerY,
+				clickX: rect.clickX,
+				clickY: rect.clickY,
+				rawCenterX: rect.rawCenterX,
+				rawCenterY: rect.rawCenterY,
+				life: typeof Game.TickerAge === "number" ? Game.TickerAge : null,
+				dur: typeof Game.fps === "number" ? Game.fps * 10 : null,
+				effectKind: effectKind,
+				effectName: effect && typeof effect.name === "string" ? effect.name : effectKind,
+				effectId: effect && typeof effect.id === "number" ? effect.id : null,
+				text: stripHtml(tickerEl.textContent || tickerEl.innerText || ""),
+			};
 		};
 
 		const getSpellRect = (spellId) => {
@@ -1956,6 +2002,11 @@ Game.registerMod("shimmer bridge", {
 					right: Game.bounds.right,
 					bottom: Game.bounds.bottom,
 				},
+				viewport: {
+					width: window.innerWidth,
+					height: window.innerHeight,
+					devicePixelRatio: window.devicePixelRatio || 1,
+				},
 				bigCookie: getBigCookie(),
 				spellbook: cachedSpellbook,
 				wrinklers: wrinklers,
@@ -1970,6 +2021,7 @@ Game.registerMod("shimmer bridge", {
 				upgrades: cachedUpgrades,
 				bestUpgrade: cachedBestUpgrade,
 				shimmers: serializeShimmers(),
+				fortune: getFortuneData(),
 				shimmerTelemetry: {
 					predictorMode: WRATH_GATE_ENABLED ? "intercept_gate" : "observed_click_trace",
 					preClickDeterministic: false,

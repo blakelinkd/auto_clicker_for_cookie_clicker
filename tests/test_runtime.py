@@ -18,9 +18,10 @@ class RuntimeStoreTests(unittest.TestCase):
                 upgrade_autobuy_enabled=True,
                 ascension_prep_enabled=False,
                 garden_automation_enabled=True,
-                main_cookie_clicking_enabled=True,
-                shimmer_autoclick_enabled=True,
-            )
+            main_cookie_clicking_enabled=True,
+            shimmer_autoclick_enabled=True,
+            wrath_cookie_clicking_enabled=True,
+        )
         )
 
     def test_snapshot_state_returns_copies(self):

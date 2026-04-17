@@ -36,11 +36,13 @@ def test_qt_dashboard_creation(qtbot):
         toggle_active=callbacks.toggle_active,
         toggle_main_autoclick=callbacks.toggle_main_autoclick,
         toggle_shimmer_autoclick=callbacks.toggle_shimmer_autoclick,
+        toggle_wrath_cookie_clicking=callbacks.toggle_wrath_cookie_clicking,
         toggle_stock_buying=callbacks.toggle_stock_buying,
         toggle_lucky_reserve=callbacks.toggle_lucky_reserve,
         toggle_building_buying=callbacks.toggle_building_buying,
         toggle_upgrade_buying=callbacks.toggle_upgrade_buying,
         toggle_ascension_prep=callbacks.toggle_ascension_prep,
+        toggle_garden_automation=callbacks.toggle_garden_automation,
         set_upgrade_horizon_seconds=callbacks.set_upgrade_horizon_seconds,
         set_building_horizon_seconds=callbacks.set_building_horizon_seconds,
         set_building_cap=callbacks.set_building_cap,
@@ -73,11 +75,13 @@ def test_qt_dashboard_toggle_buttons(qtbot):
         toggle_active=callbacks.toggle_active,
         toggle_main_autoclick=callbacks.toggle_main_autoclick,
         toggle_shimmer_autoclick=callbacks.toggle_shimmer_autoclick,
+        toggle_wrath_cookie_clicking=callbacks.toggle_wrath_cookie_clicking,
         toggle_stock_buying=callbacks.toggle_stock_buying,
         toggle_lucky_reserve=callbacks.toggle_lucky_reserve,
         toggle_building_buying=callbacks.toggle_building_buying,
         toggle_upgrade_buying=callbacks.toggle_upgrade_buying,
         toggle_ascension_prep=callbacks.toggle_ascension_prep,
+        toggle_garden_automation=callbacks.toggle_garden_automation,
         set_upgrade_horizon_seconds=callbacks.set_upgrade_horizon_seconds,
         set_building_horizon_seconds=callbacks.set_building_horizon_seconds,
         set_building_cap=callbacks.set_building_cap,
@@ -113,11 +117,13 @@ def test_qt_dashboard_refresh(qtbot):
         toggle_active=callbacks.toggle_active,
         toggle_main_autoclick=callbacks.toggle_main_autoclick,
         toggle_shimmer_autoclick=callbacks.toggle_shimmer_autoclick,
+        toggle_wrath_cookie_clicking=callbacks.toggle_wrath_cookie_clicking,
         toggle_stock_buying=callbacks.toggle_stock_buying,
         toggle_lucky_reserve=callbacks.toggle_lucky_reserve,
         toggle_building_buying=callbacks.toggle_building_buying,
         toggle_upgrade_buying=callbacks.toggle_upgrade_buying,
         toggle_ascension_prep=callbacks.toggle_ascension_prep,
+        toggle_garden_automation=callbacks.toggle_garden_automation,
         set_upgrade_horizon_seconds=callbacks.set_upgrade_horizon_seconds,
         set_building_horizon_seconds=callbacks.set_building_horizon_seconds,
         set_building_cap=callbacks.set_building_cap,
@@ -152,11 +158,13 @@ def _create_test_window(qtbot, refresh_interval_ms=1000):
         toggle_active=callbacks.toggle_active,
         toggle_main_autoclick=callbacks.toggle_main_autoclick,
         toggle_shimmer_autoclick=callbacks.toggle_shimmer_autoclick,
+        toggle_wrath_cookie_clicking=callbacks.toggle_wrath_cookie_clicking,
         toggle_stock_buying=callbacks.toggle_stock_buying,
         toggle_lucky_reserve=callbacks.toggle_lucky_reserve,
         toggle_building_buying=callbacks.toggle_building_buying,
         toggle_upgrade_buying=callbacks.toggle_upgrade_buying,
         toggle_ascension_prep=callbacks.toggle_ascension_prep,
+        toggle_garden_automation=callbacks.toggle_garden_automation,
         set_upgrade_horizon_seconds=callbacks.set_upgrade_horizon_seconds,
         set_building_horizon_seconds=callbacks.set_building_horizon_seconds,
         set_building_cap=callbacks.set_building_cap,
@@ -255,7 +263,37 @@ def test_qt_dashboard_has_shimmer_rng_panel(qtbot):
 def test_qt_dashboard_has_building_caps_rows(qtbot):
     """Check that building cap rows dictionary exists."""
     window = _create_test_window(qtbot)
+    window._refresh()
     assert hasattr(window, 'building_cap_rows')
+    assert hasattr(window, 'building_caps_meta')
+    assert hasattr(window, 'building_caps_layout')
+    assert window.building_cap_rows
+
+
+@pytest.mark.qt
+def test_qt_dashboard_preserves_focused_building_cap_input(qtbot):
+    """Refresh should not reset a cap field while the user is typing."""
+    window = _create_test_window(qtbot)
+    building_entries = [
+        {
+            "name": "Cursor",
+            "amount": 12,
+            "cap": 100,
+            "remaining_to_cap": 88,
+            "manual_cap": 100,
+            "cap_ignored": False,
+        }
+    ]
+
+    window._update_building_caps(building_entries, {"ignored_building_caps": []})
+    cap_input = window.building_cap_rows["Cursor"]["cap_input"]
+    cap_input.setFocus()
+    cap_input.setText("123")
+    cap_input.setModified(True)
+
+    window._update_building_caps(building_entries, {"ignored_building_caps": []})
+
+    assert cap_input.text() == "123"
 
 
 @pytest.mark.qt
@@ -264,7 +302,7 @@ def test_qt_dashboard_has_all_toggle_buttons(qtbot):
     window = _create_test_window(qtbot)
     expected_toggles = [
         "active", "stock", "lucky_reserve", "building", "upgrade", "ascension",
-        "main_autoclick", "shimmer_autoclick"
+        "main_autoclick", "shimmer_autoclick", "wrath_cookie"
     ]
     for toggle in expected_toggles:
         assert toggle in window.toggle_buttons, f"Missing toggle button: {toggle}"
@@ -300,14 +338,14 @@ def test_qt_dashboard_has_exit_button(qtbot):
 def test_qt_dashboard_has_building_horizon_controls(qtbot):
     """Check that building horizon controls exist."""
     window = _create_test_window(qtbot)
-    assert hasattr(window, 'building_horizon_spin')
+    assert hasattr(window, 'building_horizon_slider')
 
 
 @pytest.mark.qt
 def test_qt_dashboard_has_upgrade_horizon_controls(qtbot):
     """Check that upgrade horizon controls exist."""
     window = _create_test_window(qtbot)
-    assert hasattr(window, 'upgrade_horizon_spin')
+    assert hasattr(window, 'upgrade_horizon_slider')
 
 
 @pytest.mark.qt

@@ -105,38 +105,8 @@ class SpellAutocaster:
                 )
             return None
 
-        stretch = state["spells_by_key"].get(STRETCH_TIME_KEY)
         hand = state["spells_by_key"].get(HAND_OF_FATE_KEY)
-        combo_eval = evaluate_combo_buffs({buff["name"] for buff in state["buffs"]})
-        advance_plan = self._get_hand_of_fate_advance_plan(state, combo_eval)
-        hand_castable = self._can_cast_hand_of_fate(state, hand, now)
-        if self._can_cast_stretch_time(state, stretch, now, defer_for_hand=hand_castable):
-            return SpellAction(
-                kind="cast_spell",
-                key=stretch["key"],
-                name=stretch["name"],
-                screen_x=stretch["screen_x"],
-                screen_y=stretch["screen_y"],
-                cost=stretch["cost"],
-                magic=state["magic"],
-                max_magic=state["max_magic"],
-                reason="extend_valuable_buff",
-            )
-
-        if self._can_cast_haggler_step(state, advance_plan, now):
-            return SpellAction(
-                kind="cast_spell",
-                key=advance_plan["step_spell"]["key"],
-                name=advance_plan["step_spell"]["name"],
-                screen_x=advance_plan["step_spell"]["screen_x"],
-                screen_y=advance_plan["step_spell"]["screen_y"],
-                cost=advance_plan["step_spell"]["cost"],
-                magic=state["magic"],
-                max_magic=state["max_magic"],
-                reason=f"advance_to_{advance_plan['target_outcome'].replace(' ', '_')}",
-            )
-
-        if hand_castable:
+        if self._can_cast_hand_of_fate(state, hand, now):
             forecast = state.get("hand_of_fate_forecast") or {}
             outcome = forecast.get("outcome")
             return SpellAction(
@@ -151,21 +121,6 @@ class SpellAutocaster:
                 reason=f"spawn_{str(outcome).replace(' ', '_')}" if outcome else "spawn_shimmer",
             )
 
-        pixies = state["spells_by_key"].get(CRAFTY_PIXIES_KEY)
-        pixies_plan = self._get_crafty_pixies_plan(state, building_diag)
-        if self._can_cast_crafty_pixies(state, pixies, pixies_plan, now):
-            return SpellAction(
-                kind="cast_spell",
-                key=pixies["key"],
-                name=pixies["name"],
-                screen_x=pixies["screen_x"],
-                screen_y=pixies["screen_y"],
-                cost=pixies["cost"],
-                magic=state["magic"],
-                max_magic=state["max_magic"],
-                reason=f"discount_{pixies_plan['building_name'].replace(' ', '_')}",
-            )
-
         return None
 
     def get_diagnostics(self, snapshot, to_screen_point, building_diag=None):
@@ -173,54 +128,33 @@ class SpellAutocaster:
         if state is None:
             return {"available": False, "reason": "no_spellbook_data"}
 
-        stretch = state["spells_by_key"].get(STRETCH_TIME_KEY)
         hand = state["spells_by_key"].get(HAND_OF_FATE_KEY)
-        pixies = state["spells_by_key"].get(CRAFTY_PIXIES_KEY)
         valuable_buffs = [buff["name"] for buff in state["buffs"] if self._is_valuable_buff(buff["name"])]
+        long_running_buffs = self._get_long_running_buffs(state)
         combo_eval = evaluate_combo_buffs({buff["name"] for buff in state["buffs"]})
         hand_forecast = state.get("hand_of_fate_forecast") or {}
-        advance_plan = self._get_hand_of_fate_advance_plan(state, combo_eval)
-        stretch_target = self._get_stretch_time_target(state)
         reactive_stack = self._has_reactive_combo_stack(state)
-        pixies_plan = self._get_crafty_pixies_plan(state, building_diag)
-        hand_castable = self._can_cast_hand_of_fate(state, hand, time.monotonic())
+        now = time.monotonic()
+        hand_castable = self._can_cast_hand_of_fate(state, hand, now)
 
         reason = "no_spell_signal"
         candidate = None
         if not state["on_minigame"]:
             reason = "grimoire_closed"
-        elif self._can_cast_haggler_step(state, advance_plan, time.monotonic()):
-            reason = "advance_hand_of_fate_forecast"
-            candidate = advance_plan["step_spell"]["name"] if advance_plan.get("step_spell") else advance_plan.get("target_outcome")
-        elif hand_castable and reactive_stack:
-            reason = "hand_of_fate_combo_ready"
-            candidate = hand_forecast.get("outcome") or hand["name"]
         elif hand_castable:
-            reason = "hand_of_fate_economic_ready"
+            reason = "hand_of_fate_ready_on_long_buff"
             candidate = hand_forecast.get("outcome") or hand["name"]
-        elif self._can_cast_stretch_time(state, stretch, time.monotonic(), defer_for_hand=hand_castable):
-            reason = "stretch_time_ready"
-            candidate = stretch_target
-        elif hand is not None and hand["ready"] and reactive_stack and hand_forecast.get("backfire"):
-            reason = "hand_of_fate_bad_roll"
+        elif hand is None:
+            reason = "hand_of_fate_missing"
+        elif not long_running_buffs:
+            reason = "waiting_for_long_buff"
             candidate = hand_forecast.get("outcome") or hand["name"]
-        elif hand is not None and hand["ready"] and reactive_stack:
-            reason = "hand_of_fate_waiting_for_stack_roll"
+        elif self._recently_cast(hand["key"], now, cooldown=1.5):
+            reason = "hand_of_fate_recently_cast"
             candidate = hand_forecast.get("outcome") or hand["name"]
-        elif hand is not None and hand["ready"] and combo_eval.get("can_spawn_click_buff"):
-            reason = "hand_of_fate_waiting_for_better_roll"
-            candidate = hand_forecast.get("outcome") or hand["name"]
-        elif hand is not None and reactive_stack:
+        elif not hand.get("ready") or not self._has_enough_magic(state, hand):
             reason = "waiting_for_hand_of_fate_mana"
             candidate = hand_forecast.get("outcome") or hand["name"]
-        elif self._can_cast_crafty_pixies(state, pixies, pixies_plan, time.monotonic()):
-            reason = "crafty_pixies_ready"
-            candidate = None if pixies_plan is None else pixies_plan.get("building_name")
-        elif (state.get("spells_by_key") or {}).get(RESURRECT_ABOMINATION_KEY) is not None:
-            reason = "resurrect_abomination_disabled"
-            candidate = None
-        elif valuable_buffs:
-            reason = "holding_current_buff_stack"
 
         return {
             "available": True,
@@ -237,15 +171,16 @@ class SpellAutocaster:
             "hand_of_fate_backfire": hand_forecast.get("backfire"),
             "hand_of_fate_fail_chance": hand_forecast.get("failChance"),
             "hand_of_fate_cast_index": hand_forecast.get("castIndex"),
-            "hand_of_fate_target_offset": None if advance_plan is None else advance_plan.get("target_offset"),
-            "hand_of_fate_target_outcome": None if advance_plan is None else advance_plan.get("target_outcome"),
-            "spell_advance_ready": None if advance_plan is None else advance_plan.get("actionable"),
-            "stretch_time_target": stretch_target,
+            "hand_of_fate_target_offset": None,
+            "hand_of_fate_target_outcome": None,
+            "spell_advance_ready": None,
+            "stretch_time_target": None,
             "reactive_combo_stack": reactive_stack,
             "candidate": candidate,
-            "crafty_pixies_target": None if pixies_plan is None else pixies_plan.get("building_name"),
-            "crafty_pixies_expected_savings": None if pixies_plan is None else pixies_plan.get("expected_savings"),
-            "crafty_pixies_target_price": None if pixies_plan is None else pixies_plan.get("price"),
+            "long_running_buffs": tuple(buff["name"] for buff in long_running_buffs),
+            "crafty_pixies_target": None,
+            "crafty_pixies_expected_savings": None,
+            "crafty_pixies_target_price": None,
             "wrinklers_active": state["wrinklers_active"],
             "wrinklers_attached": state["wrinklers_attached"],
             "wrinklers_max": state["wrinklers_max"],
@@ -376,23 +311,25 @@ class SpellAutocaster:
             return False
         if self._recently_cast(spell["key"], now, cooldown=1.5):
             return False
-        if self._has_click_combo_buff(state):
+        if not self._has_enough_magic(state, spell):
             return False
-        forecast = state.get("hand_of_fate_forecast")
-        if not isinstance(forecast, dict):
-            return False
-        if forecast.get("backfire"):
-            return False
-        combo_eval = evaluate_combo_buffs({buff["name"] for buff in state["buffs"]})
-        outcome = str(forecast.get("outcome") or "").lower()
-        buff_names = {buff["name"] for buff in state["buffs"] if buff.get("name")}
-        if combo_eval.get("can_spawn_click_buff"):
-            return outcome in HAND_OF_FATE_CLICK_OUTCOMES or self._is_stackable_hand_of_fate_combo(buff_names, outcome)
-        if self._is_stackable_hand_of_fate_combo(buff_names, outcome):
+        return bool(self._get_long_running_buffs(state))
+
+    def _has_enough_magic(self, state, spell):
+        cost = spell.get("cost")
+        if cost is None:
             return True
-        if any(self._is_valuable_buff(buff["name"]) for buff in state["buffs"]):
-            return False
-        return outcome in HAND_OF_FATE_ECONOMIC_OUTCOMES
+        return float(state.get("magic") or 0.0) + 1e-9 >= float(cost)
+
+    def _get_long_running_buffs(self, state):
+        long_buffs = []
+        for buff in state.get("buffs") or []:
+            remaining = buff.get("time")
+            if remaining is None:
+                continue
+            if float(remaining) > 5.0:
+                long_buffs.append(buff)
+        return long_buffs
 
     def _can_cast_haggler_step(self, state, advance_plan, now):
         if self._has_click_combo_buff(state):

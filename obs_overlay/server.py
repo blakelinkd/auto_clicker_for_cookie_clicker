@@ -9,8 +9,10 @@ import mimetypes
 import queue
 import random
 import socket
+import struct
 import threading
 import time
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -19,19 +21,195 @@ from urllib.parse import urlparse
 
 BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
+SPRITES_DIR = ASSETS_DIR / "sprites"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 47651
 CLIENTS: set[queue.Queue[str]] = set()
 CLIENTS_LOCK = threading.Lock()
+DEFAULT_HUD_MESSAGE_TTL_MS = 4000
+MAX_HUD_MESSAGE_LENGTH = 500
+MIN_HUD_MESSAGE_MS = 4000
+MAX_HUD_MESSAGE_MS = 86_400_000
+
+
+def ensure_worm_aseprite_exports() -> dict[str, Any] | None:
+    """Export the worm/bones Aseprite layers into browser-ready PNG assets."""
+    source = SPRITES_DIR / "worm_with_bones.ase"
+    if not source.is_file():
+        return None
+    return export_aseprite_layers(
+        source,
+        {
+            "worm": SPRITES_DIR / "worm_with_bones_worm.png",
+            "bones": SPRITES_DIR / "worm_with_bones_bones.png",
+        },
+        SPRITES_DIR / "worm_with_bones.layers.json",
+    )
+
+
+def export_aseprite_layers(
+    source: Path,
+    layer_outputs: dict[str, Path],
+    manifest_path: Path,
+) -> dict[str, Any]:
+    from PIL import Image
+
+    data = source.read_bytes()
+    if len(data) < 128 or data[4:6] != b"\xe0\xa5":
+        raise ValueError(f"Unsupported Aseprite file: {source}")
+    width = struct.unpack_from("<H", data, 8)[0]
+    height = struct.unpack_from("<H", data, 10)[0]
+    frames = struct.unpack_from("<H", data, 6)[0]
+    color_depth = struct.unpack_from("<H", data, 12)[0]
+    if color_depth != 32:
+        raise ValueError(f"Only RGBA Aseprite files are supported: {source}")
+
+    layers: list[dict[str, Any]] = []
+    images: dict[str, Any] = {}
+    offset = 128
+    for _frame_index in range(frames):
+        frame_bytes = struct.unpack_from("<I", data, offset)[0]
+        old_chunk_count = struct.unpack_from("<H", data, offset + 6)[0]
+        new_chunk_count = struct.unpack_from("<I", data, offset + 12)[0]
+        chunk_count = new_chunk_count or old_chunk_count
+        chunk_offset = offset + 16
+        for _chunk_index in range(chunk_count):
+            chunk_size, chunk_type = struct.unpack_from("<IH", data, chunk_offset)
+            payload = chunk_offset + 6
+            if chunk_type == 0x2004:
+                name_length = struct.unpack_from("<H", data, payload + 16)[0]
+                name = data[payload + 18:payload + 18 + name_length].decode("utf-8")
+                layers.append({"name": name, "opacity": data[payload + 12]})
+            elif chunk_type == 0x2005:
+                _extract_aseprite_cel(data, payload, chunk_offset, chunk_size, layers, layer_outputs, images, width, height)
+            chunk_offset += chunk_size
+        offset += frame_bytes
+
+    exported_layers: dict[str, str] = {}
+    for layer_name, image in images.items():
+        output_path = layer_outputs[layer_name]
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        image.save(output_path)
+        exported_layers[layer_name] = "/" + output_path.relative_to(BASE_DIR).as_posix()
+
+    manifest = {
+        "version": 1,
+        "source": "/" + source.relative_to(BASE_DIR).as_posix(),
+        "width": width,
+        "height": height,
+        "layers": exported_layers,
+    }
+    manifest_path.write_text(json.dumps(manifest, separators=(",", ":")) + "\n", encoding="utf-8")
+    return manifest
+
+
+def _extract_aseprite_cel(
+    data: bytes,
+    payload: int,
+    chunk_offset: int,
+    chunk_size: int,
+    layers: list[dict[str, Any]],
+    layer_outputs: dict[str, Path],
+    images: dict[str, Any],
+    width: int,
+    height: int,
+) -> None:
+    from PIL import Image
+
+    layer_index, x, y, cel_opacity, cel_type = struct.unpack_from("<HhhBH", data, payload)
+    if layer_index >= len(layers):
+        return
+    layer_name = str(layers[layer_index]["name"])
+    if layer_name not in layer_outputs or cel_type not in {0, 2}:
+        return
+    cel_width, cel_height = struct.unpack_from("<HH", data, payload + 16)
+    pixel_offset = payload + 20
+    pixel_length = cel_width * cel_height * 4
+    if cel_type == 2:
+        pixels = zlib.decompress(data[pixel_offset:chunk_offset + chunk_size])
+    else:
+        pixels = data[pixel_offset:pixel_offset + pixel_length]
+    if len(pixels) < pixel_length:
+        return
+    layer_image = images.get(layer_name)
+    if layer_image is None:
+        layer_image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        images[layer_name] = layer_image
+    cel_image = Image.frombytes("RGBA", (cel_width, cel_height), pixels[:pixel_length])
+    if cel_opacity < 255:
+        alpha = cel_image.getchannel("A").point(lambda value: int(value * (cel_opacity / 255)))
+        cel_image.putalpha(alpha)
+    layer_image.alpha_composite(cel_image, (x, y))
 
 
 def clamp01(value: Any) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
-def validate_spawn_event(payload: Any) -> dict[str, Any] | None:
-    if not isinstance(payload, dict) or payload.get("type") not in {"spawn_biden", "spawn_fruit", "play_sound"}:
+def _coerce_duration_ms(value: Any, *, default_ms: int, minimum_ms: int, maximum_ms: int) -> int:
+    try:
+        duration_ms = int(float(value))
+    except (TypeError, ValueError):
+        duration_ms = default_ms
+    return max(minimum_ms, min(maximum_ms, duration_ms))
+
+
+def _validate_hud_message_event(payload: dict[str, Any]) -> dict[str, Any] | None:
+    text = str(payload.get("text") or "").strip()
+    if not text:
         return None
+    text = text[:MAX_HUD_MESSAGE_LENGTH]
+    event = dict(payload)
+    event["version"] = 1
+    event["type"] = "hud_message"
+    event["source"] = str(payload.get("source") or "qt_hud")
+    event["text"] = text
+    event["ttl_ms"] = _coerce_duration_ms(
+        payload.get("ttl_ms"),
+        default_ms=DEFAULT_HUD_MESSAGE_TTL_MS,
+        minimum_ms=MIN_HUD_MESSAGE_MS,
+        maximum_ms=MAX_HUD_MESSAGE_MS,
+    )
+    repeat_ms = payload.get("repeat_interval_ms")
+    if repeat_ms is not None:
+        event["repeat_interval_ms"] = _coerce_duration_ms(
+            repeat_ms,
+            default_ms=MIN_HUD_MESSAGE_MS,
+            minimum_ms=MIN_HUD_MESSAGE_MS,
+            maximum_ms=MAX_HUD_MESSAGE_MS,
+        )
+    if "submitted_at_ms" in payload:
+        try:
+            event["submitted_at_ms"] = int(float(payload["submitted_at_ms"]))
+        except (TypeError, ValueError):
+            event.pop("submitted_at_ms", None)
+    return event
+
+
+def validate_spawn_event(payload: Any) -> dict[str, Any] | None:
+    if not isinstance(payload, dict) or payload.get("type") not in {"spawn_biden", "spawn_fruit", "play_sound", "hud_message", "hud_message_delete", "biden_timer"}:
+        return None
+    if payload.get("type") == "biden_timer":
+        event = {
+            "version": 1,
+            "type": "biden_timer",
+            "source": str(payload.get("source") or "golden_cookie_forecast"),
+            "available": bool(payload.get("available")),
+        }
+        if event["available"]:
+            try:
+                event["remaining_seconds"] = max(0.0, float(payload["remaining_seconds"]))
+            except (KeyError, TypeError, ValueError):
+                event["available"] = False
+        event["on_screen"] = int(payload.get("on_screen") or 0)
+        return event
+    if payload.get("type") == "hud_message_delete":
+        event_id = str(payload.get("event_id") or "").strip()
+        if not event_id:
+            return None
+        return {"version": 1, "type": "hud_message_delete", "event_id": event_id, "source": str(payload.get("source") or "qt_hud")}
+    if payload.get("type") == "hud_message":
+        return _validate_hud_message_event(payload)
     if payload.get("type") == "play_sound":
         sound = payload.get("sound")
         if sound not in {"dean", "grandma"}:
@@ -309,6 +487,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    ensure_worm_aseprite_exports()
     stop_event = threading.Event()
     udp_thread = threading.Thread(
         target=udp_listener,

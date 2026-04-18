@@ -17,4 +17,22 @@ Rights note: Publicly available soundboard clip selected for this local OBS
 overlay prototype at the user's request. The source page provides free playback
 and MP3 download but does not state an open-content license.
 
+farting_sound.mp3
+Source: https://orangefreesounds.com/farting-sound/
+File: https://www.orangefreesounds.com/wp-content/uploads/2016/06/Farting-sound.mp3
+Title: Farting Sound
+Author: Alexander
+License: Creative Commons Attribution 4.0 International
+Source page states the sound is free for commercial use.
+Date accessed: 2026-04-18
+
+chomp_sound_effect.mp3
+Source: https://orangefreesounds.com/chomp-sound-effect/
+File: https://www.orangefreesounds.com/wp-content/uploads/2021/01/Chomp-sound-effect.mp3
+Title: Chomp Sound Effect
+Author: Alexander
+License: Creative Commons Attribution 4.0 International
+Source page states the sound is free for commercial use.
+Date accessed: 2026-04-18
+
 Date accessed: 2026-04-16

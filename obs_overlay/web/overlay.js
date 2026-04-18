@@ -4,13 +4,16 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-23";
+  const assetVersion = "snake-heat-worm-28";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const fakeCursorSprite = new Image();
+  const poopSprite = new Image();
   const sounds = {
     dean: createAudioPool(`/assets/audio/dean_scream.mp3?v=${assetVersion}`, 0.65, 3),
     grandma: createAudioPool(`/assets/audio/grandma_cookie.mp3?v=${assetVersion}`, 0.45, 4),
+    poop: createAudioPool(`/assets/audio/farting_sound.mp3?v=${assetVersion}`, 0.55, 8),
+    chomp: createAudioPool(`/assets/audio/chomp_sound_effect.mp3?v=${assetVersion}`, 0.48, 6),
   };
   const bidenSpawns = [];
   const bidenSpawnByShimmerId = new Map();
@@ -39,7 +42,30 @@
   const fakeCursorMaxPauseMs = 5000;
   const fakeCursorMinPathMs = 2600;
   const fakeCursorMaxPathMs = 7200;
+  const poopFrameCount = 6;
+  const poopDropIntervalMs = 20000;
+  const poopAnimationFrameMs = 120;
+  const poopGrowDurationMs = 850;
+  const poopStartScale = 0.2;
+  const poopDrawSize = 92;
+  const poopGravity = 780;
+  const poopTailImpulse = 120;
+  const poopRestitution = 0.12;
+  const poopFriction = 0.82;
+  const poopAirDrag = 0.996;
+  const poopAngularDrag = 0.985;
+  const poopPhysicsSubstepMs = 16;
+  const wormSpawnEveryPoops = 5;
+  const wormBaseScale = 1.08;
+  const wormCrawlSpeed = 74;
+  const wormInchwormArch = 18;
+  const wormInchwormContract = 0.3;
+  const wormEatDurationMs = 3200;
+  const wormCrunchIntervalMs = 520;
+  const wormHeadShakeSize = 8;
+  const wormGrowthMultiplier = 1.12;
   const twitchChatQuipIntervalMs = 180000;
+  const defaultHudMessageTtlMs = 4000;
   const snake = {
     mode: "heat",
     segments: [],
@@ -66,6 +92,8 @@
     heatRecoveryUntil: 0,
   };
   const babyGrandmaSnakes = [];
+  const grandmaPoops = [];
+  const poopWorms = [];
   const bidenWaypointBuffer = [];
   const fakeCursor = {
     x: 0,
@@ -75,9 +103,21 @@
     waitUntil: 0,
   };
   const combatLog = [];
+  const hudMessages = [];
+  const bidenTimer = {
+    available: false,
+    remainingSeconds: null,
+    receivedAt: 0,
+    onScreen: 0,
+    resetAt: 0,
+  };
   let lastDurgularYell = 0;
   let lastTwitchChatQuip = 0;
+  let lastGrandmaPoopAt = 0;
+  let totalGrandmaPoopsSpawned = 0;
+  let pendingPoopWormSpawns = 0;
   let bidenSpawnCount = 0;
+  let wormSprite = null;
   const biotachyonicWhisper = "it's supposed to look like biden is popping the cookies...";
   const twitchChatQuip = "Feel free to point out any bugs, make suggestions or request in the twitch chat!";
   const bidenFocusLines = [
@@ -113,6 +153,7 @@
   bidenSprite.src = "/assets/biden_i_did_that.png";
   grandmaHeadSprite.src = `/assets/game/grandma_head_smooth.png?v=${assetVersion}`;
   fakeCursorSprite.src = `/assets/game/cursor.png?v=${assetVersion}`;
+  poopSprite.src = `/assets/sprites/poop.png?v=${assetVersion}`;
 
   function createAudioPool(src, volume, count) {
     const clips = [];
@@ -201,6 +242,7 @@
     snake.heatStuckSince = 0;
     snake.heatRecoveryUntil = 0;
     babyGrandmaSnakes.length = 0;
+    lastGrandmaPoopAt = snake.lastTick;
   }
 
   function cloneSegments(segments) {
@@ -356,6 +398,7 @@
     if (!payload) return;
     if (payload.type === "spawn_biden") {
       addBidenSpawn(payload);
+      resetBidenTimer(performance.now());
       return;
     }
     if (payload.type === "play_sound") {
@@ -450,6 +493,68 @@
     while (combatLog.length > 18) {
       combatLog.shift();
     }
+  }
+
+  function addHudMessage(payload, now) {
+    const text = String(payload.text || "").trim();
+    if (!text) return false;
+    const ttlMs = positiveNumber(payload.ttl_ms, defaultHudMessageTtlMs);
+    const repeatIntervalMs = positiveNumber(payload.repeat_interval_ms, 0);
+    const id = payload.event_id || `hud:${now}:${hudMessages.length}`;
+    const existing = hudMessages.find((message) => message.id === id);
+    if (existing) {
+      existing.text = text.slice(0, 500);
+      existing.ttlMs = ttlMs;
+      existing.repeatIntervalMs = repeatIntervalMs;
+      existing.displayedAt = now;
+      existing.expiresAt = now + ttlMs;
+      existing.nextRepeatAt = repeatIntervalMs > 0 ? now + repeatIntervalMs : 0;
+      return true;
+    }
+    hudMessages.push({
+      id,
+      text: text.slice(0, 500),
+      ttlMs,
+      repeatIntervalMs,
+      displayedAt: now,
+      expiresAt: now + ttlMs,
+      nextRepeatAt: repeatIntervalMs > 0 ? now + repeatIntervalMs : 0,
+    });
+    while (hudMessages.length > 24) {
+      hudMessages.shift();
+    }
+    return true;
+  }
+
+  function deleteHudMessage(payload) {
+    const id = String(payload.event_id || "").trim();
+    if (!id) return false;
+    for (let i = hudMessages.length - 1; i >= 0; i -= 1) {
+      if (hudMessages[i].id === id) {
+        hudMessages.splice(i, 1);
+      }
+    }
+    return true;
+  }
+
+  function updateBidenTimer(payload, now) {
+    bidenTimer.available = Boolean(payload.available);
+    bidenTimer.remainingSeconds = bidenTimer.available ? positiveNumber(payload.remaining_seconds, 0) : null;
+    bidenTimer.receivedAt = now;
+    bidenTimer.onScreen = Number(payload.on_screen || 0);
+    bidenTimer.resetAt = 0;
+  }
+
+  function resetBidenTimer(now) {
+    bidenTimer.available = true;
+    bidenTimer.remainingSeconds = 0;
+    bidenTimer.receivedAt = now;
+    bidenTimer.resetAt = now;
+  }
+
+  function positiveNumber(value, fallback) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
   }
 
   function handleBidenEaten(spawn, now) {
@@ -661,6 +766,9 @@
     enterHeatSeekingMode(now);
     advanceHeatSeeking(now);
     advanceBabyGrandmaSnakes(now);
+    maybeDropGrandmaPoops(now);
+    advanceGrandmaPoops(now);
+    advancePoopWorms(now);
   }
 
   function advanceBabyGrandmaSnakes(now) {
@@ -1144,6 +1252,779 @@
     return compacted;
   }
 
+  class AsepriteBoneSprite {
+    constructor(url, options = {}) {
+      this.url = url;
+      this.manifestUrl = options.manifestUrl || "";
+      this.imageLayerName = options.imageLayerName || "worm";
+      this.bonesLayerName = options.bonesLayerName || "bones";
+      this.sliceCount = options.sliceCount || 56;
+      this.width = 0;
+      this.height = 0;
+      this.imageCanvas = null;
+      this.bonesCanvas = null;
+      this.restPoints = [];
+      this.minBoneX = 0;
+      this.maxBoneX = 0;
+      this.boneBaseY = 0;
+      this.ready = false;
+    }
+
+    async load() {
+      if (this.manifestUrl) {
+        await this.loadExtractedLayers();
+        this.ready = true;
+        return this;
+      }
+      const response = await fetch(`${this.url}?v=${assetVersion}`);
+      if (!response.ok) throw new Error(`Could not load Aseprite sprite: ${this.url}`);
+      const buffer = await response.arrayBuffer();
+      await this.parse(buffer);
+      this.ready = true;
+      return this;
+    }
+
+    async loadExtractedLayers() {
+      const response = await fetch(`${this.manifestUrl}?v=${assetVersion}`);
+      if (!response.ok) throw new Error(`Could not load bone sprite manifest: ${this.manifestUrl}`);
+      const manifest = await response.json();
+      this.width = Number(manifest.width || 0);
+      this.height = Number(manifest.height || 0);
+      const layers = manifest.layers || {};
+      const imageUrl = layers[this.imageLayerName];
+      const bonesUrl = layers[this.bonesLayerName];
+      if (!imageUrl || !bonesUrl || this.width <= 0 || this.height <= 0) {
+        throw new Error(`Bone sprite manifest is missing ${this.imageLayerName}/${this.bonesLayerName} layers`);
+      }
+      this.imageCanvas = await imageCanvasFromUrl(imageUrl, this.width, this.height);
+      this.bonesCanvas = await imageCanvasFromUrl(bonesUrl, this.width, this.height);
+      this.extractRestBones();
+    }
+
+    async parse(buffer) {
+      const view = new DataView(buffer);
+      const bytes = new Uint8Array(buffer);
+      if (view.getUint16(4, true) !== 0xA5E0) {
+        throw new Error(`Unsupported Aseprite file magic for ${this.url}`);
+      }
+      this.width = view.getUint16(8, true);
+      this.height = view.getUint16(10, true);
+      const colorDepth = view.getUint16(12, true);
+      if (colorDepth !== 32) {
+        throw new Error(`Only RGBA Aseprite files are supported for ${this.url}`);
+      }
+
+      const layers = [];
+      const layerCanvases = new Map();
+      let offset = 128;
+      const frameCount = view.getUint16(6, true);
+      for (let frame = 0; frame < frameCount; frame += 1) {
+        const frameBytes = view.getUint32(offset, true);
+        const oldChunkCount = view.getUint16(offset + 6, true);
+        const newChunkCount = view.getUint32(offset + 16, true);
+        const chunkCount = newChunkCount || oldChunkCount;
+        let chunkOffset = offset + 16;
+        for (let chunk = 0; chunk < chunkCount; chunk += 1) {
+          const chunkSize = view.getUint32(chunkOffset, true);
+          const chunkType = view.getUint16(chunkOffset + 4, true);
+          const payload = chunkOffset + 6;
+          if (chunkType === 0x2004) {
+            const opacity = view.getUint8(payload + 12);
+            const nameLength = view.getUint16(payload + 16, true);
+            const nameBytes = bytes.slice(payload + 18, payload + 18 + nameLength);
+            layers.push({
+              name: new TextDecoder().decode(nameBytes),
+              opacity,
+            });
+          } else if (chunkType === 0x2005) {
+            await this.parseCelChunk(view, bytes, payload, layers, layerCanvases);
+          }
+          chunkOffset += chunkSize;
+        }
+        offset += frameBytes;
+      }
+
+      this.imageCanvas = layerCanvases.get(this.imageLayerName);
+      this.bonesCanvas = layerCanvases.get(this.bonesLayerName);
+      if (!this.imageCanvas || !this.bonesCanvas) {
+        throw new Error(`Aseprite sprite must contain ${this.imageLayerName} and ${this.bonesLayerName} layers`);
+      }
+      this.extractRestBones();
+    }
+
+    async parseCelChunk(view, bytes, payload, layers, layerCanvases) {
+      const layerIndex = view.getUint16(payload, true);
+      const layer = layers[layerIndex];
+      if (!layer) return;
+      if (layer.name !== this.imageLayerName && layer.name !== this.bonesLayerName) return;
+
+      const x = view.getInt16(payload + 2, true);
+      const y = view.getInt16(payload + 4, true);
+      const opacity = view.getUint8(payload + 6) / 255;
+      const celType = view.getUint16(payload + 7, true);
+      if (celType !== 0 && celType !== 2) return;
+
+      const celWidth = view.getUint16(payload + 16, true);
+      const celHeight = view.getUint16(payload + 18, true);
+      const pixelOffset = payload + 20;
+      const pixelByteLength = celWidth * celHeight * 4;
+      let pixels;
+      if (celType === 2) {
+        pixels = await inflateAsepriteZlib(bytes.slice(pixelOffset, payload + view.getUint32(payload - 6, true) - 6));
+      } else {
+        pixels = bytes.slice(pixelOffset, pixelOffset + pixelByteLength);
+      }
+      if (pixels.length < pixelByteLength) return;
+
+      const canvasForLayer = layerCanvases.get(layer.name) || createLayerCanvas(this.width, this.height);
+      layerCanvases.set(layer.name, canvasForLayer);
+      const layerCtx = canvasForLayer.getContext("2d");
+      const imageData = new ImageData(new Uint8ClampedArray(pixels.slice(0, pixelByteLength)), celWidth, celHeight);
+      const celCanvas = createLayerCanvas(celWidth, celHeight);
+      celCanvas.getContext("2d").putImageData(imageData, 0, 0);
+      layerCtx.save();
+      layerCtx.globalAlpha = opacity * (layer.opacity / 255);
+      layerCtx.drawImage(celCanvas, x, y);
+      layerCtx.restore();
+    }
+
+    extractRestBones() {
+      const imageData = this.bonesCanvas.getContext("2d").getImageData(0, 0, this.width, this.height).data;
+      const columns = [];
+      for (let x = 0; x < this.width; x += 1) {
+        let totalY = 0;
+        let count = 0;
+        for (let y = 0; y < this.height; y += 1) {
+          const index = (y * this.width + x) * 4;
+          const r = imageData[index];
+          const g = imageData[index + 1];
+          const b = imageData[index + 2];
+          const a = imageData[index + 3];
+          if (a > 16 && r > 190 && b > 190 && g < 90) {
+            totalY += y;
+            count += 1;
+          }
+        }
+        if (count > 0) columns.push({ x, y: totalY / count });
+      }
+
+      if (columns.length < 2) {
+        this.minBoneX = 0;
+        this.maxBoneX = this.width;
+        this.boneBaseY = this.height / 2;
+        this.restPoints = Array.from({ length: this.sliceCount + 1 }, (_, i) => ({
+          x: (i / this.sliceCount) * this.width,
+          y: this.boneBaseY,
+        }));
+        return;
+      }
+
+      this.minBoneX = columns[0].x;
+      this.maxBoneX = columns[columns.length - 1].x;
+      this.boneBaseY = columns.reduce((sum, point) => sum + point.y, 0) / columns.length;
+      this.restPoints = [];
+      for (let i = 0; i <= this.sliceCount; i += 1) {
+        const x = this.minBoneX + ((this.maxBoneX - this.minBoneX) * i) / this.sliceCount;
+        this.restPoints.push({ x, y: interpolateBoneColumn(columns, x) });
+      }
+    }
+
+    buildWavePose(options) {
+      const x = options.x || 0;
+      const y = options.y || 0;
+      const scale = options.scale || 1;
+      const direction = options.direction >= 0 ? 1 : -1;
+      const phase = options.phase || 0;
+      const amplitude = (options.amplitude || 5.5) * scale;
+      const cycles = options.cycles || 2.25;
+      const length = Math.max(1, this.maxBoneX - this.minBoneX);
+      return this.restPoints.map((point) => {
+        const t = (point.x - this.minBoneX) / length;
+        return {
+          x: x + direction * (point.x - this.minBoneX) * scale,
+          y: y + Math.sin(t * Math.PI * 2 * cycles + phase) * amplitude,
+        };
+      });
+    }
+
+    buildInchwormPose(options) {
+      const x = options.x || 0;
+      const y = options.y || 0;
+      const scale = options.scale || 1;
+      const direction = options.direction >= 0 ? 1 : -1;
+      const phase = options.phase || 0;
+      const length = Math.max(1, this.maxBoneX - this.minBoneX);
+      const contraction = (1 - Math.cos(phase)) / 2;
+      const lengthFactor = 1 - contraction * (options.contraction || 0.3);
+      const arch = (options.arch || 18) * scale * contraction;
+      const headShake = (options.headShake || 0) * scale;
+      const headShakePhase = options.headShakePhase || phase;
+
+      return this.restPoints.map((point) => {
+        const t = (point.x - this.minBoneX) / length;
+        const pullTowardMiddle = (0.5 - t) * contraction * 0.28;
+        const shapedT = Math.max(0, Math.min(1, t + pullTowardMiddle));
+        const localX = shapedT * length * lengthFactor;
+        const bodyArch = Math.sin(t * Math.PI) * arch;
+        const bodyRipple = Math.sin(phase * 1.4 + t * Math.PI * 2) * scale * 1.4;
+        const headWeight = Math.max(0, Math.min(1, (t - 0.68) / 0.32));
+        const headShakeX = Math.sin(headShakePhase * 3.1) * headShake * headWeight * 0.55;
+        const headShakeY = Math.cos(headShakePhase * 4.7) * headShake * headWeight;
+        return {
+          x: x + direction * (localX + headShakeX),
+          y: y - bodyArch + bodyRipple + headShakeY,
+        };
+      });
+    }
+
+    mouthPoint(pose) {
+      return pose[pose.length - 1] || { x: 0, y: 0 };
+    }
+
+    lengthAtScale(scale) {
+      return Math.max(1, (this.maxBoneX - this.minBoneX) * scale);
+    }
+
+    groundBaselineY(groundY, scale) {
+      return groundY - (this.height - this.boneBaseY) * scale;
+    }
+
+    draw(ctx, pose, options = {}) {
+      if (!this.ready || pose.length < 2) return;
+      const scale = options.scale || 1;
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      for (let i = 0; i < pose.length - 1; i += 1) {
+        const p0 = pose[i];
+        const p1 = pose[i + 1];
+        const sourceX = this.restPoints[i].x;
+        const nextSourceX = this.restPoints[i + 1].x;
+        const sourceWidth = Math.max(1, nextSourceX - sourceX + 1);
+        const sourceBoneY = this.restPoints[i].y;
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
+        const segmentLength = Math.sqrt(dx * dx + dy * dy);
+        if (segmentLength < 0.01) continue;
+
+        ctx.save();
+        ctx.translate(p0.x, p0.y);
+        ctx.rotate(Math.atan2(dy, dx));
+        ctx.drawImage(
+          this.imageCanvas,
+          sourceX,
+          0,
+          sourceWidth,
+          this.height,
+          0,
+          -sourceBoneY * scale,
+          segmentLength + 1,
+          this.height * scale,
+        );
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+  }
+
+  async function inflateAsepriteZlib(bytes) {
+    if (typeof DecompressionStream === "undefined") {
+      throw new Error("This browser does not support DecompressionStream for Aseprite layer data.");
+    }
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  function createLayerCanvas(width, height) {
+    const layerCanvas = document.createElement("canvas");
+    layerCanvas.width = width;
+    layerCanvas.height = height;
+    return layerCanvas;
+  }
+
+  async function imageCanvasFromUrl(url, width, height) {
+    const image = await loadImage(url);
+    const layerCanvas = createLayerCanvas(width || image.naturalWidth, height || image.naturalHeight);
+    layerCanvas.getContext("2d").drawImage(image, 0, 0);
+    return layerCanvas;
+  }
+
+  function loadImage(url) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error(`Could not load image: ${url}`));
+      image.src = `${url}?v=${assetVersion}`;
+    });
+  }
+
+  function interpolateBoneColumn(columns, x) {
+    if (x <= columns[0].x) return columns[0].y;
+    for (let i = 1; i < columns.length; i += 1) {
+      if (x <= columns[i].x) {
+        const previous = columns[i - 1];
+        const next = columns[i];
+        const t = (x - previous.x) / Math.max(1, next.x - previous.x);
+        return previous.y + (next.y - previous.y) * t;
+      }
+    }
+    return columns[columns.length - 1].y;
+  }
+
+  function maybeDropGrandmaPoops(now) {
+    if (!lastGrandmaPoopAt) lastGrandmaPoopAt = now;
+    if (now - lastGrandmaPoopAt < poopDropIntervalMs) return;
+    lastGrandmaPoopAt = now;
+
+    spawnGrandmaPoop(snake, now, 1);
+    for (const baby of babyGrandmaSnakes) {
+      spawnGrandmaPoop(baby, now, babyGrandmaDrawScale);
+    }
+  }
+
+  function spawnGrandmaPoop(grandmaSnake, now, drawScale) {
+    const segments = currentGrandmaSegments(grandmaSnake, now);
+    if (segments.length === 0) return false;
+
+    const tailIndex = segments.length - 1;
+    const tail = segments[tailIndex];
+    const tailDirection = grandmaTailDirection(grandmaSnake, segments);
+    const sizes = segmentSizeMultipliers(segments.length);
+    const baseSize = tailIndex === 0 ? snakeHeadDrawSize : snakeBodyDrawSize;
+    const tailRadius = (baseSize * sizes[tailIndex] * drawScale) / 2;
+    const startSize = poopDrawSize * Math.max(0.45, drawScale);
+    const startX = tail.x + tailDirection.x * tailRadius * 0.65;
+    const startY = tail.y + tailDirection.y * tailRadius * 0.65;
+
+    grandmaPoops.push({
+      x: startX,
+      y: startY,
+      vx: tailDirection.x * poopTailImpulse + (Math.random() - 0.5) * 30,
+      vy: tailDirection.y * poopTailImpulse - 35,
+      angle: Math.atan2(tailDirection.y, tailDirection.x) + Math.PI / 2,
+      angularVelocity: (Math.random() - 0.5) * 4.8,
+      size: startSize,
+      createdAt: now,
+      lastFrameAt: now,
+      eatScale: 1,
+      eatShake: 0,
+      beingEaten: false,
+    });
+    if (grandmaPoops.length > 80) grandmaPoops.shift();
+    totalGrandmaPoopsSpawned += 1;
+    if (totalGrandmaPoopsSpawned % wormSpawnEveryPoops === 0) {
+      queuePoopWormSpawn(now);
+    }
+    playSound(sounds.poop);
+    return true;
+  }
+
+  function currentGrandmaSegments(grandmaSnake, now) {
+    if (grandmaSnake.heatSegments && grandmaSnake.heatSegments.length > 0) {
+      return grandmaSnake.heatSegments;
+    }
+    if (grandmaSnake === snake && snake.segments.length > 0) {
+      return gridSegmentsToPixels(interpolatedSegments(now));
+    }
+    return [];
+  }
+
+  function grandmaTailDirection(grandmaSnake, segments) {
+    const tailIndex = segments.length - 1;
+    if (tailIndex <= 0) {
+      const direction = grandmaSnake.heatDirection || snake.heatDirection || { x: 1, y: 0 };
+      return normalizeVector({ x: -direction.x, y: -direction.y });
+    }
+
+    const tail = segments[tailIndex];
+    const previous = segments[tailIndex - 1];
+    return normalizeVector({
+      x: tail.x - previous.x,
+      y: tail.y - previous.y,
+    });
+  }
+
+  function advanceGrandmaPoops(now) {
+    for (const poop of grandmaPoops) {
+      const dt = Math.min(100, Math.max(0, now - poop.lastFrameAt));
+      poop.lastFrameAt = now;
+      let remaining = dt;
+      while (remaining > 0) {
+        const step = Math.min(poopPhysicsSubstepMs, remaining) / 1000;
+        integrateGrandmaPoop(poop, step);
+        remaining -= poopPhysicsSubstepMs;
+      }
+      constrainPoopToViewport(poop, now);
+    }
+
+    for (let pass = 0; pass < 3; pass += 1) {
+      for (let i = 0; i < grandmaPoops.length; i += 1) {
+        constrainPoopToViewport(grandmaPoops[i], now);
+        for (let j = i + 1; j < grandmaPoops.length; j += 1) {
+          resolvePoopCollision(grandmaPoops[i], grandmaPoops[j], now);
+        }
+      }
+    }
+  }
+
+  function integrateGrandmaPoop(poop, dt) {
+    poop.vy += poopGravity * dt;
+    poop.vx *= Math.pow(poopAirDrag, dt * 60);
+    poop.vy *= Math.pow(poopAirDrag, dt * 60);
+    poop.angularVelocity *= Math.pow(poopAngularDrag, dt * 60);
+    poop.x += poop.vx * dt;
+    poop.y += poop.vy * dt;
+    poop.angle += poop.angularVelocity * dt;
+  }
+
+  function constrainPoopToViewport(poop, now) {
+    const bounds = poopAabb(poop, now);
+    if (bounds.minX < 0) {
+      poop.x += -bounds.minX;
+      poop.vx = Math.abs(poop.vx) * poopRestitution;
+      poop.vy *= poopFriction;
+      poop.angularVelocity *= -poopFriction;
+    } else if (bounds.maxX > window.innerWidth) {
+      poop.x -= bounds.maxX - window.innerWidth;
+      poop.vx = -Math.abs(poop.vx) * poopRestitution;
+      poop.vy *= poopFriction;
+      poop.angularVelocity *= -poopFriction;
+    }
+
+    const updatedBounds = poopAabb(poop, now);
+    if (updatedBounds.minY < 0) {
+      poop.y += -updatedBounds.minY;
+      poop.vy = Math.abs(poop.vy) * poopRestitution;
+      poop.vx *= poopFriction;
+      poop.angularVelocity *= -poopFriction;
+    }
+
+    const floorBounds = poopAabb(poop, now);
+    if (floorBounds.maxY > window.innerHeight) {
+      poop.y -= floorBounds.maxY - window.innerHeight;
+      poop.vy = -Math.abs(poop.vy) * poopRestitution;
+      poop.vx *= poopFriction;
+      poop.angularVelocity *= poopFriction;
+      if (Math.abs(poop.vy) < 18) poop.vy = 0;
+      if (Math.abs(poop.vx) < 5) poop.vx = 0;
+      if (Math.abs(poop.angularVelocity) < 0.08) poop.angularVelocity = 0;
+    }
+  }
+
+  function resolvePoopCollision(first, second, now) {
+    const collision = poopRotatedRectCollision(first, second, now);
+    if (!collision) return false;
+
+    const correctionX = collision.normal.x * collision.depth * 0.5;
+    const correctionY = collision.normal.y * collision.depth * 0.5;
+    first.x -= correctionX;
+    first.y -= correctionY;
+    second.x += correctionX;
+    second.y += correctionY;
+
+    const relativeVelocity = {
+      x: second.vx - first.vx,
+      y: second.vy - first.vy,
+    };
+    const separatingSpeed = (relativeVelocity.x * collision.normal.x)
+      + (relativeVelocity.y * collision.normal.y);
+    if (separatingSpeed < 0) {
+      const impulse = -(1 + poopRestitution) * separatingSpeed * 0.5;
+      const impulseX = collision.normal.x * impulse;
+      const impulseY = collision.normal.y * impulse;
+      first.vx -= impulseX;
+      first.vy -= impulseY;
+      second.vx += impulseX;
+      second.vy += impulseY;
+
+      const tangent = { x: -collision.normal.y, y: collision.normal.x };
+      const tangentSpeed = (relativeVelocity.x * tangent.x) + (relativeVelocity.y * tangent.y);
+      const frictionImpulse = tangentSpeed * 0.18;
+      first.vx += tangent.x * frictionImpulse;
+      first.vy += tangent.y * frictionImpulse;
+      second.vx -= tangent.x * frictionImpulse;
+      second.vy -= tangent.y * frictionImpulse;
+
+      first.angularVelocity -= tangentSpeed * 0.012;
+      second.angularVelocity += tangentSpeed * 0.012;
+    }
+
+    first.vx *= 0.985;
+    first.vy *= 0.985;
+    second.vx *= 0.985;
+    second.vy *= 0.985;
+    return true;
+  }
+
+  function poopRotatedRectCollision(first, second, now) {
+    const firstCorners = poopCorners(first, now);
+    const secondCorners = poopCorners(second, now);
+    const axes = [
+      rectAxis(firstCorners[0], firstCorners[1]),
+      rectAxis(firstCorners[1], firstCorners[2]),
+      rectAxis(secondCorners[0], secondCorners[1]),
+      rectAxis(secondCorners[1], secondCorners[2]),
+    ];
+    let minOverlap = Infinity;
+    let bestAxis = null;
+
+    for (const axis of axes) {
+      const firstProjection = projectCorners(firstCorners, axis);
+      const secondProjection = projectCorners(secondCorners, axis);
+      const overlap = Math.min(firstProjection.max, secondProjection.max)
+        - Math.max(firstProjection.min, secondProjection.min);
+      if (overlap <= 0) return null;
+      if (overlap < minOverlap) {
+        minOverlap = overlap;
+        bestAxis = axis;
+      }
+    }
+
+    if (!bestAxis) return null;
+    const betweenCenters = { x: second.x - first.x, y: second.y - first.y };
+    if ((betweenCenters.x * bestAxis.x) + (betweenCenters.y * bestAxis.y) < 0) {
+      bestAxis = { x: -bestAxis.x, y: -bestAxis.y };
+    }
+    return { normal: bestAxis, depth: minOverlap };
+  }
+
+  function poopCorners(poop, now) {
+    const size = poopCurrentSize(poop, now);
+    const halfWidth = size * 0.5;
+    const halfHeight = size * 0.42;
+    const cos = Math.cos(poop.angle);
+    const sin = Math.sin(poop.angle);
+    return [
+      rotatePoopCorner(poop, -halfWidth, -halfHeight, cos, sin),
+      rotatePoopCorner(poop, halfWidth, -halfHeight, cos, sin),
+      rotatePoopCorner(poop, halfWidth, halfHeight, cos, sin),
+      rotatePoopCorner(poop, -halfWidth, halfHeight, cos, sin),
+    ];
+  }
+
+  function rotatePoopCorner(poop, x, y, cos, sin) {
+    return {
+      x: poop.x + x * cos - y * sin,
+      y: poop.y + x * sin + y * cos,
+    };
+  }
+
+  function rectAxis(first, second) {
+    const edge = normalizeVector({
+      x: second.x - first.x,
+      y: second.y - first.y,
+    });
+    return { x: -edge.y, y: edge.x };
+  }
+
+  function projectCorners(corners, axis) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const corner of corners) {
+      const projection = corner.x * axis.x + corner.y * axis.y;
+      min = Math.min(min, projection);
+      max = Math.max(max, projection);
+    }
+    return { min, max };
+  }
+
+  function poopAabb(poop, now) {
+    const corners = poopCorners(poop, now);
+    return corners.reduce((bounds, corner) => ({
+      minX: Math.min(bounds.minX, corner.x),
+      maxX: Math.max(bounds.maxX, corner.x),
+      minY: Math.min(bounds.minY, corner.y),
+      maxY: Math.max(bounds.maxY, corner.y),
+    }), {
+      minX: Infinity,
+      maxX: -Infinity,
+      minY: Infinity,
+      maxY: -Infinity,
+    });
+  }
+
+  function poopCurrentSize(poop, now) {
+    return poop.size * grandmaPoopScale(poop, now) * (poop.eatScale == null ? 1 : poop.eatScale);
+  }
+
+  function queuePoopWormSpawn(now) {
+    pendingPoopWormSpawns += 1;
+    spawnPendingPoopWorms(now);
+  }
+
+  function spawnPendingPoopWorms(now) {
+    if (!wormSprite || !wormSprite.ready) return;
+    while (pendingPoopWormSpawns > 0) {
+      if (!spawnPoopWorm(now)) return;
+      pendingPoopWormSpawns -= 1;
+    }
+  }
+
+  function spawnPoopWorm(now) {
+    if (!wormSprite || !wormSprite.ready) return false;
+    const groundY = window.innerHeight - 3;
+    const spawnFromLeft = Math.random() < 0.5;
+    const scale = wormBaseScale;
+    const length = wormSprite.lengthAtScale(scale);
+    poopWorms.push({
+      x: spawnFromLeft ? -length * 0.35 : window.innerWidth + length * 0.35,
+      baselineY: wormSprite.groundBaselineY(groundY, scale),
+      scale,
+      direction: spawnFromLeft ? 1 : -1,
+      phase: Math.random() * Math.PI * 2,
+      lastFrameAt: now,
+      targetPoop: null,
+      eatingPoop: null,
+      eatStartedAt: 0,
+      nextCrunchAt: 0,
+    });
+    return true;
+  }
+
+  function advancePoopWorms(now) {
+    if (!wormSprite || !wormSprite.ready) return;
+    spawnPendingPoopWorms(now);
+    for (const worm of poopWorms) {
+      const dt = Math.min(100, Math.max(0, now - (worm.lastFrameAt || now))) / 1000;
+      worm.lastFrameAt = now;
+      worm.baselineY = wormSprite.groundBaselineY(window.innerHeight - 3, worm.scale);
+      worm.phase += dt * (worm.eatingPoop ? 11.5 : 8.5);
+
+      if (worm.eatingPoop) {
+        advanceWormEating(worm, now);
+        continue;
+      }
+
+      worm.targetPoop = nearestTouchablePoop(worm, now);
+      if (!worm.targetPoop) continue;
+
+      const pose = wormPose(worm);
+      const mouth = wormSprite.mouthPoint(pose);
+      const target = worm.targetPoop;
+      worm.direction = target.x >= mouth.x ? 1 : -1;
+      const refreshedPose = wormPose(worm);
+      const refreshedMouth = wormSprite.mouthPoint(refreshedPose);
+      const distanceToTarget = pixelDistance(refreshedMouth, target);
+      const touchDistance = poopCurrentSize(target, now) * 0.48 + 10 * worm.scale;
+      if (distanceToTarget <= touchDistance) {
+        startWormEating(worm, target, now);
+        continue;
+      }
+
+      const step = Math.min(wormCrawlSpeed * worm.scale * dt, Math.max(0, distanceToTarget - touchDistance));
+      worm.x += worm.direction * step;
+    }
+  }
+
+  function nearestTouchablePoop(worm, now) {
+    let best = null;
+    let bestDistance = Infinity;
+    const mouth = wormSprite.mouthPoint(wormPose(worm));
+    for (const poop of grandmaPoops) {
+      if (poop.beingEaten) continue;
+      const distance = pixelDistance(mouth, poop) - poopCurrentSize(poop, now) / 2;
+      if (distance < bestDistance) {
+        best = poop;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  function startWormEating(worm, poop, now) {
+    poop.beingEaten = true;
+    poop.vx = 0;
+    poop.vy = 0;
+    poop.angularVelocity *= 0.25;
+    worm.eatingPoop = poop;
+    worm.targetPoop = poop;
+    worm.eatStartedAt = now;
+    worm.nextCrunchAt = 0;
+  }
+
+  function advanceWormEating(worm, now) {
+    const poop = worm.eatingPoop;
+    if (!poop) return;
+    const progress = clamp01((now - worm.eatStartedAt) / wormEatDurationMs);
+    poop.eatScale = Math.max(0, 1 - progress);
+    poop.eatShake = Math.sin(now / 22) * (1 - progress) * 7;
+    worm.direction = poop.x >= wormSprite.mouthPoint(wormPose(worm)).x ? 1 : -1;
+    if (now >= worm.nextCrunchAt) {
+      playSound(sounds.chomp);
+      worm.nextCrunchAt = now + wormCrunchIntervalMs;
+    }
+    if (progress < 1) return;
+
+    const index = grandmaPoops.indexOf(poop);
+    if (index >= 0) grandmaPoops.splice(index, 1);
+    worm.scale *= wormGrowthMultiplier;
+    worm.baselineY = wormSprite.groundBaselineY(window.innerHeight - 3, worm.scale);
+    worm.eatingPoop = null;
+    worm.targetPoop = null;
+    worm.eatStartedAt = 0;
+  }
+
+  function wormPose(worm) {
+    const eatingProgress = worm.eatingPoop
+      ? clamp01((performance.now() - worm.eatStartedAt) / wormEatDurationMs)
+      : 0;
+    return wormSprite.buildInchwormPose({
+      x: worm.x,
+      y: worm.baselineY,
+      scale: worm.scale,
+      direction: worm.direction,
+      phase: worm.phase,
+      arch: wormInchwormArch,
+      contraction: wormInchwormContract,
+      headShake: worm.eatingPoop ? wormHeadShakeSize * (1 - eatingProgress * 0.35) : 0,
+      headShakePhase: worm.phase + performance.now() / 42,
+    });
+  }
+
+  function drawPoopWorms(now) {
+    if (!wormSprite || !wormSprite.ready) return;
+    for (const worm of poopWorms) {
+      wormSprite.draw(ctx, wormPose(worm), { scale: worm.scale });
+    }
+  }
+
+  function grandmaPoopScale(poop, now) {
+    const progress = clamp01((now - poop.createdAt) / poopGrowDurationMs);
+    const eased = 1 - ((1 - progress) * (1 - progress));
+    return poopStartScale + (1 - poopStartScale) * eased;
+  }
+
+  function drawGrandmaPoops(now) {
+    if (!poopSprite.complete || !poopSprite.naturalWidth || !poopSprite.naturalHeight) return;
+    const frameWidth = poopSprite.naturalWidth / poopFrameCount;
+    const frameHeight = poopSprite.naturalHeight;
+    const frame = Math.floor((now / poopAnimationFrameMs) % poopFrameCount);
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    for (const poop of grandmaPoops) {
+      const size = poopCurrentSize(poop, now);
+      const shake = poop.eatShake || 0;
+      ctx.save();
+      ctx.translate(poop.x + shake, poop.y - Math.abs(shake) * 0.25);
+      ctx.rotate(poop.angle);
+      ctx.drawImage(
+        poopSprite,
+        frame * frameWidth,
+        0,
+        frameWidth,
+        frameHeight,
+        -size / 2,
+        -size / 2,
+        size,
+        size,
+      );
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   function drawSnake(now) {
     if (!config.snakeEnabled) return;
     if (!grandmaHeadSprite.complete || !grandmaHeadSprite.naturalWidth || !grandmaHeadSprite.naturalHeight) return;
@@ -1577,6 +2458,172 @@
     ctx.restore();
   }
 
+  function updateHudMessages(now) {
+    for (const message of hudMessages) {
+      if (message.repeatIntervalMs <= 0) continue;
+      if (now < message.nextRepeatAt) continue;
+      message.displayedAt = now;
+      message.expiresAt = now + message.ttlMs;
+      message.nextRepeatAt = now + message.repeatIntervalMs;
+    }
+    for (let i = hudMessages.length - 1; i >= 0; i -= 1) {
+      const message = hudMessages[i];
+      if (message.repeatIntervalMs > 0) continue;
+      if (now >= message.expiresAt) {
+        hudMessages.splice(i, 1);
+      }
+    }
+  }
+
+  function drawHudMessages(now) {
+    updateHudMessages(now);
+    const visibleMessages = hudMessages.filter((message) => now < message.expiresAt);
+    if (!visibleMessages.length) return;
+
+    const columnWidth = Math.max(280, window.innerWidth / 3);
+    const x = (window.innerWidth - columnWidth) / 2;
+    const topMargin = window.innerHeight * 0.05;
+    const paddingX = 18;
+    const paddingY = 12;
+    const gap = 12;
+    const radius = 14;
+    const fontSize = Math.max(18, Math.min(30, window.innerWidth / 52));
+    const lineHeight = Math.round(fontSize * 1.28);
+    const maxTextWidth = columnWidth - paddingX * 2;
+    let y = topMargin;
+
+    ctx.save();
+    ctx.font = `800 ${fontSize}px Georgia, "Times New Roman", serif`;
+    ctx.textBaseline = "top";
+    ctx.shadowColor = "rgba(0, 0, 0, 0.98)";
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
+
+    for (const message of visibleMessages.slice(-8)) {
+      const lines = layoutPlainTextLines(message.text, maxTextWidth);
+      const cardHeight = paddingY * 2 + lines.length * lineHeight;
+      if (y + cardHeight > window.innerHeight - 12) break;
+      const age = Math.max(0, now - message.displayedAt);
+      const remaining = Math.max(0, message.expiresAt - now);
+      const fadeIn = Math.min(1, age / 250);
+      const fadeOut = Math.min(1, remaining / 600);
+      const alpha = Math.max(0, Math.min(1, fadeIn, fadeOut));
+
+      ctx.shadowColor = "transparent";
+      ctx.fillStyle = `rgba(12, 8, 2, ${0.64 * alpha})`;
+      ctx.strokeStyle = `rgba(214, 173, 82, ${0.42 * alpha})`;
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(x, y, columnWidth, cardHeight, radius);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.shadowColor = "rgba(0, 0, 0, 0.98)";
+      ctx.fillStyle = `rgba(255, 215, 84, ${alpha})`;
+      let lineY = y + paddingY;
+      for (const line of lines) {
+        ctx.fillText(line, x + paddingX, lineY, maxTextWidth);
+        lineY += lineHeight;
+      }
+      y += cardHeight + gap;
+    }
+    ctx.restore();
+  }
+
+  function drawBidenTimer(now) {
+    const width = Math.max(250, Math.min(360, window.innerWidth * 0.22));
+    const height = 58;
+    const x = 24;
+    const y = 24;
+    const radius = 14;
+    const paddingX = 16;
+    const baselineY = y + 18;
+    const labelFont = "800 21px Verdana, Geneva, sans-serif";
+    const timeFont = "800 24px Verdana, Geneva, sans-serif";
+    const label = "Biden";
+    const suffix = " Time:";
+    const labelColor = "rgba(170, 211, 114, 0.98)";
+    const white = "rgba(255, 255, 255, 0.98)";
+
+    ctx.save();
+    ctx.fillStyle = "rgba(8, 10, 14, 0.66)";
+    ctx.strokeStyle = "rgba(70, 156, 255, 0.34)";
+    ctx.lineWidth = 1.5;
+    drawRoundedRect(x, y, width, height, radius);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.textBaseline = "top";
+    ctx.shadowColor = "rgba(0, 0, 0, 0.98)";
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
+
+    ctx.font = labelFont;
+    ctx.fillStyle = labelColor;
+    ctx.fillText(label, x + paddingX, baselineY);
+    const labelWidth = ctx.measureText(label).width;
+    ctx.fillStyle = labelColor;
+    ctx.fillText(suffix, x + paddingX + labelWidth, baselineY);
+    const suffixWidth = ctx.measureText(suffix).width;
+
+    ctx.font = timeFont;
+    const timeText = bidenTimerText(now);
+    const timeWidth = ctx.measureText(timeText).width;
+    const nearTimeX = x + paddingX + labelWidth + suffixWidth + 18;
+    const rightTimeX = x + width - paddingX - timeWidth;
+    const timeX = Math.min(rightTimeX, nearTimeX + (rightTimeX - nearTimeX) * 0.5);
+    ctx.fillStyle = white;
+    ctx.fillText(timeText, timeX, y + 16);
+    ctx.restore();
+  }
+
+  function bidenTimerText(now) {
+    if (!bidenTimer.available || bidenTimer.remainingSeconds == null) return "--:--";
+    const elapsed = Math.max(0, (now - bidenTimer.receivedAt) / 1000);
+    const remaining = Math.max(0, bidenTimer.remainingSeconds - elapsed);
+    const minutes = Math.floor(remaining / 60);
+    const seconds = Math.floor(remaining % 60);
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  function layoutPlainTextLines(text, maxWidth) {
+    const lines = [];
+    const words = String(text || "").split(/\s+/).filter(Boolean);
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (!current && ctx.measureText(candidate).width > maxWidth) {
+        lines.push(...splitLongWord(candidate, maxWidth));
+        current = "";
+        continue;
+      }
+      if (ctx.measureText(candidate).width <= maxWidth || !current) {
+        current = candidate;
+        continue;
+      }
+      lines.push(current);
+      current = word;
+    }
+    if (current) lines.push(current);
+    return lines.length ? lines : [""];
+  }
+
+  function drawRoundedRect(x, y, width, height, radius) {
+    const r = Math.min(radius, width / 2, height / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + width - r, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+    ctx.lineTo(x + width, y + height - r);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+    ctx.lineTo(x + r, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
   function enrageMeterThreshold() {
     const threshold = Number(snake.enrageEatenThreshold);
     return Number.isFinite(threshold) && threshold > 0 ? threshold : enrageMeterMaxBidens;
@@ -1763,9 +2810,13 @@
     maybeAddTwitchChatQuip(now);
     advanceSnake(now);
     drawSnake(now);
+    drawGrandmaPoops(now);
+    drawPoopWorms(now);
     drawFakeCursor(now);
     drawBidens(now);
     drawEnrageMeter(now);
+    drawBidenTimer(now);
+    drawHudMessages(now);
     drawCombatLog(now);
     requestAnimationFrame(draw);
   }
@@ -1773,11 +2824,34 @@
   resizeCanvas();
   resetSnake();
   window.addEventListener("resize", resizeCanvas);
+  wormSprite = new AsepriteBoneSprite("", {
+    manifestUrl: "/assets/sprites/worm_with_bones.layers.json",
+    imageLayerName: "worm",
+    bonesLayerName: "bones",
+    sliceCount: 64,
+  });
+  wormSprite.load().catch((error) => {
+    console.warn("Worm bone sprite failed to load.", error);
+    wormSprite = null;
+  });
 
   const events = new EventSource("/events");
   events.onmessage = (event) => {
     try {
-      addSpawn(JSON.parse(event.data));
+      const payload = JSON.parse(event.data);
+      if (payload.type === "hud_message") {
+        addHudMessage(payload, performance.now());
+        return;
+      }
+      if (payload.type === "hud_message_delete") {
+        deleteHudMessage(payload);
+        return;
+      }
+      if (payload.type === "biden_timer") {
+        updateBidenTimer(payload, performance.now());
+        return;
+      }
+      addSpawn(payload);
     } catch (_error) {
       // Ignore malformed overlay events.
     }

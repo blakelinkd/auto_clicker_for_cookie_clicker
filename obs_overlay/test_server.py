@@ -33,6 +33,65 @@ class ServerEventTests(unittest.TestCase):
         self.assertEqual(event, {"version": 1, "type": "play_sound", "sound": "dean"})
         self.assertIsNone(server.validate_spawn_event({"type": "play_sound", "sound": "bad"}))
 
+    def test_validate_hud_message_event(self):
+        event = server.validate_spawn_event(
+            {
+                "type": "hud_message",
+                "source": "qt_hud",
+                "text": " Hello overlay ",
+                "ttl_ms": 120000,
+                "repeat_interval_ms": 300000,
+                "submitted_at_ms": "123456",
+            }
+        )
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event["version"], 1)
+        self.assertEqual(event["type"], "hud_message")
+        self.assertEqual(event["text"], "Hello overlay")
+        self.assertEqual(event["ttl_ms"], 120000)
+        self.assertEqual(event["repeat_interval_ms"], 300000)
+        self.assertEqual(event["submitted_at_ms"], 123456)
+
+    def test_validate_hud_message_rejects_empty_text_and_clamps_durations(self):
+        self.assertIsNone(server.validate_spawn_event({"type": "hud_message", "text": "   "}))
+
+        event = server.validate_spawn_event(
+            {
+                "type": "hud_message",
+                "text": "Short",
+                "ttl_ms": 1,
+                "repeat_interval_ms": 999999999,
+            }
+        )
+
+        self.assertEqual(event["ttl_ms"], 4000)
+        self.assertEqual(event["repeat_interval_ms"], 86400000)
+
+    def test_validate_hud_message_delete_event(self):
+        event = server.validate_spawn_event({"type": "hud_message_delete", "event_id": " hud:test "})
+
+        self.assertEqual(event, {
+            "version": 1,
+            "type": "hud_message_delete",
+            "event_id": "hud:test",
+            "source": "qt_hud",
+        })
+        self.assertIsNone(server.validate_spawn_event({"type": "hud_message_delete"}))
+
+    def test_validate_biden_timer_event(self):
+        event = server.validate_spawn_event(
+            {"type": "biden_timer", "available": True, "remaining_seconds": "12.5", "on_screen": 1}
+        )
+
+        self.assertEqual(event["type"], "biden_timer")
+        self.assertTrue(event["available"])
+        self.assertEqual(event["remaining_seconds"], 12.5)
+        self.assertEqual(event["on_screen"], 1)
+
+        unavailable = server.validate_spawn_event({"type": "biden_timer", "available": True})
+        self.assertFalse(unavailable["available"])
+
     def test_broadcast_event_queues_json_for_clients(self):
         client = queue.Queue()
         with server.CLIENTS_LOCK:
@@ -78,12 +137,44 @@ class ServerEventTests(unittest.TestCase):
             self.assertLess(image.getchannel("A").getextrema()[0], 255)
 
     def test_audio_assets_exist(self):
-        for name in ("dean_scream.mp3", "grandma_cookie.mp3"):
+        for name in ("dean_scream.mp3", "grandma_cookie.mp3", "farting_sound.mp3", "chomp_sound_effect.mp3"):
             path = Path("obs_overlay/assets/audio") / name
             self.assertTrue(path.is_file(), name)
             self.assertGreater(path.stat().st_size, 1024)
             header = path.read_bytes()[:3]
             self.assertTrue(header == b"ID3" or header[:2] == b"\xff\xfb", name)
+
+    def test_poop_sprite_sheet_exists_with_six_horizontal_frames(self):
+        path = Path("obs_overlay/assets/sprites/poop.png")
+        self.assertTrue(path.is_file())
+        image = Image.open(path)
+        self.assertEqual(image.mode, "RGBA")
+        self.assertEqual(image.width % 6, 0)
+        self.assertEqual(image.width // 6, image.height)
+
+    def test_worm_aseprite_asset_exists(self):
+        path = Path("obs_overlay/assets/sprites/worm_with_bones.ase")
+        self.assertTrue(path.is_file())
+        data = path.read_bytes()
+        self.assertGreater(len(data), 128)
+        self.assertEqual(data[4:6], b"\xe0\xa5")
+        self.assertEqual(int.from_bytes(data[8:10], "little"), 128)
+        self.assertEqual(int.from_bytes(data[10:12], "little"), 128)
+
+    def test_worm_aseprite_exports_browser_ready_layers(self):
+        manifest = server.ensure_worm_aseprite_exports()
+
+        self.assertIsNotNone(manifest)
+        self.assertEqual(manifest["width"], 128)
+        self.assertEqual(manifest["height"], 128)
+        self.assertIn("worm", manifest["layers"])
+        self.assertIn("bones", manifest["layers"])
+        for name in ("worm", "bones"):
+            path = Path("obs_overlay") / manifest["layers"][name].lstrip("/")
+            self.assertTrue(path.is_file(), name)
+            image = Image.open(path)
+            self.assertEqual(image.mode, "RGBA")
+            self.assertEqual(image.size, (128, 128))
 
 
 if __name__ == "__main__":

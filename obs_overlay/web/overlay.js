@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-worm-28";
+  const assetVersion = "snake-heat-worm-30";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const fakeCursorSprite = new Image();
@@ -58,11 +58,13 @@
   const wormSpawnEveryPoops = 5;
   const wormBaseScale = 1.08;
   const wormCrawlSpeed = 74;
-  const wormInchwormArch = 18;
-  const wormInchwormContract = 0.3;
+  const wormInchwormArch = 7;
+  const wormInchwormContract = 0.12;
+  const wormGroundMargin = 3;
+  const wormGroundReach = 28;
   const wormEatDurationMs = 3200;
   const wormCrunchIntervalMs = 520;
-  const wormHeadShakeSize = 8;
+  const wormHeadShakeSize = 3.5;
   const wormGrowthMultiplier = 1.12;
   const twitchChatQuipIntervalMs = 180000;
   const defaultHudMessageTtlMs = 4000;
@@ -399,6 +401,10 @@
     if (payload.type === "spawn_biden") {
       addBidenSpawn(payload);
       resetBidenTimer(performance.now());
+      return;
+    }
+    if (payload.type === "spawn_worm") {
+      queuePoopWormSpawn(performance.now());
       return;
     }
     if (payload.type === "play_sound") {
@@ -1462,14 +1468,13 @@
 
       return this.restPoints.map((point) => {
         const t = (point.x - this.minBoneX) / length;
-        const pullTowardMiddle = (0.5 - t) * contraction * 0.28;
-        const shapedT = Math.max(0, Math.min(1, t + pullTowardMiddle));
-        const localX = shapedT * length * lengthFactor;
-        const bodyArch = Math.sin(t * Math.PI) * arch;
-        const bodyRipple = Math.sin(phase * 1.4 + t * Math.PI * 2) * scale * 1.4;
-        const headWeight = Math.max(0, Math.min(1, (t - 0.68) / 0.32));
-        const headShakeX = Math.sin(headShakePhase * 3.1) * headShake * headWeight * 0.55;
-        const headShakeY = Math.cos(headShakePhase * 4.7) * headShake * headWeight;
+        const localX = t * length * lengthFactor;
+        const archShape = Math.sin(t * Math.PI);
+        const bodyArch = Math.pow(Math.max(0, archShape), 1.45) * arch;
+        const bodyRipple = Math.sin(phase * 1.2 + t * Math.PI * 2) * scale * 0.45;
+        const headWeight = Math.max(0, Math.min(1, (t - 0.78) / 0.22));
+        const headShakeX = Math.sin(headShakePhase * 2.4) * headShake * headWeight * 0.28;
+        const headShakeY = Math.cos(headShakePhase * 3.2) * headShake * headWeight;
         return {
           x: x + direction * (localX + headShakeX),
           y: y - bodyArch + bodyRipple + headShakeY,
@@ -1500,25 +1505,28 @@
         const p1 = pose[i + 1];
         const sourceX = this.restPoints[i].x;
         const nextSourceX = this.restPoints[i + 1].x;
-        const sourceWidth = Math.max(1, nextSourceX - sourceX + 1);
+        const sourceOverlap = 2;
+        const overlappedSourceX = Math.max(0, sourceX - sourceOverlap);
+        const sourceWidth = Math.min(this.width - overlappedSourceX, Math.max(1, nextSourceX - sourceX + 1 + sourceOverlap * 2));
         const sourceBoneY = this.restPoints[i].y;
         const dx = p1.x - p0.x;
         const dy = p1.y - p0.y;
         const segmentLength = Math.sqrt(dx * dx + dy * dy);
         if (segmentLength < 0.01) continue;
+        const destOverlap = Math.max(3, scale * 2.5);
 
         ctx.save();
         ctx.translate(p0.x, p0.y);
         ctx.rotate(Math.atan2(dy, dx));
         ctx.drawImage(
           this.imageCanvas,
-          sourceX,
+          overlappedSourceX,
           0,
           sourceWidth,
           this.height,
-          0,
+          -destOverlap / 2,
           -sourceBoneY * scale,
-          segmentLength + 1,
+          segmentLength + destOverlap,
           this.height * scale,
         );
         ctx.restore();
@@ -1862,7 +1870,7 @@
 
   function spawnPoopWorm(now) {
     if (!wormSprite || !wormSprite.ready) return false;
-    const groundY = window.innerHeight - 3;
+    const groundY = wormGroundY();
     const spawnFromLeft = Math.random() < 0.5;
     const scale = wormBaseScale;
     const length = wormSprite.lengthAtScale(scale);
@@ -1887,7 +1895,7 @@
     for (const worm of poopWorms) {
       const dt = Math.min(100, Math.max(0, now - (worm.lastFrameAt || now))) / 1000;
       worm.lastFrameAt = now;
-      worm.baselineY = wormSprite.groundBaselineY(window.innerHeight - 3, worm.scale);
+      worm.baselineY = wormSprite.groundBaselineY(wormGroundY(), worm.scale);
       worm.phase += dt * (worm.eatingPoop ? 11.5 : 8.5);
 
       if (worm.eatingPoop) {
@@ -1904,14 +1912,14 @@
       worm.direction = target.x >= mouth.x ? 1 : -1;
       const refreshedPose = wormPose(worm);
       const refreshedMouth = wormSprite.mouthPoint(refreshedPose);
-      const distanceToTarget = pixelDistance(refreshedMouth, target);
+      const horizontalDistanceToTarget = Math.abs(refreshedMouth.x - target.x);
       const touchDistance = poopCurrentSize(target, now) * 0.48 + 10 * worm.scale;
-      if (distanceToTarget <= touchDistance) {
+      if (horizontalDistanceToTarget <= touchDistance) {
         startWormEating(worm, target, now);
         continue;
       }
 
-      const step = Math.min(wormCrawlSpeed * worm.scale * dt, Math.max(0, distanceToTarget - touchDistance));
+      const step = Math.min(wormCrawlSpeed * worm.scale * dt, Math.max(0, horizontalDistanceToTarget - touchDistance));
       worm.x += worm.direction * step;
     }
   }
@@ -1922,7 +1930,10 @@
     const mouth = wormSprite.mouthPoint(wormPose(worm));
     for (const poop of grandmaPoops) {
       if (poop.beingEaten) continue;
-      const distance = pixelDistance(mouth, poop) - poopCurrentSize(poop, now) / 2;
+      const poopRadius = poopCurrentSize(poop, now) / 2;
+      const verticalReach = Math.abs(wormGroundY() - poop.y) - poopRadius;
+      if (verticalReach > wormGroundReach * worm.scale) continue;
+      const distance = Math.abs(mouth.x - poop.x) - poopRadius;
       if (distance < bestDistance) {
         best = poop;
         bestDistance = distance;
@@ -1958,10 +1969,14 @@
     const index = grandmaPoops.indexOf(poop);
     if (index >= 0) grandmaPoops.splice(index, 1);
     worm.scale *= wormGrowthMultiplier;
-    worm.baselineY = wormSprite.groundBaselineY(window.innerHeight - 3, worm.scale);
+    worm.baselineY = wormSprite.groundBaselineY(wormGroundY(), worm.scale);
     worm.eatingPoop = null;
     worm.targetPoop = null;
     worm.eatStartedAt = 0;
+  }
+
+  function wormGroundY() {
+    return window.innerHeight - wormGroundMargin;
   }
 
   function wormPose(worm) {

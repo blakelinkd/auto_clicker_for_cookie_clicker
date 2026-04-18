@@ -187,8 +187,14 @@ def _validate_hud_message_event(payload: dict[str, Any]) -> dict[str, Any] | Non
 
 
 def validate_spawn_event(payload: Any) -> dict[str, Any] | None:
-    if not isinstance(payload, dict) or payload.get("type") not in {"spawn_biden", "spawn_fruit", "play_sound", "hud_message", "hud_message_delete", "biden_timer"}:
+    if not isinstance(payload, dict) or payload.get("type") not in {"spawn_biden", "spawn_fruit", "spawn_worm", "play_sound", "hud_message", "hud_message_delete", "biden_timer"}:
         return None
+    if payload.get("type") == "spawn_worm":
+        return {
+            "version": 1,
+            "type": "spawn_worm",
+            "source": str(payload.get("source") or "debug"),
+        }
     if payload.get("type") == "biden_timer":
         event = {
             "version": 1,
@@ -293,6 +299,15 @@ def random_fruit_event() -> dict[str, Any]:
         "fruit": {
             "kind": "frenzy_cookie",
         },
+    }
+
+
+def random_worm_event() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "type": "spawn_worm",
+        "source": "timer",
+        "mode": "periodic",
     }
 
 
@@ -471,6 +486,13 @@ def run_periodic_biden_loop(stop_event: threading.Event, interval_seconds: float
             broadcast_event(event)
 
 
+def run_periodic_worm_loop(stop_event: threading.Event, interval_seconds: float) -> None:
+    while not stop_event.wait(interval_seconds):
+        event = validate_spawn_event(random_worm_event())
+        if event is not None:
+            broadcast_event(event)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Serve the OBS Browser Source overlay.")
     parser.add_argument("--host", default=DEFAULT_HOST)
@@ -480,6 +502,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--demo-clicks", action="store_true")
     parser.add_argument("--no-snake", action="store_true")
     parser.add_argument("--bidens", type=float, default=0.0, metavar="SECONDS")
+    parser.add_argument("--worms", type=float, default=0.0, metavar="SECONDS")
     parser.add_argument("--fruit-interval-seconds", type=float, default=20.0)
     parser.add_argument("--quiet", action="store_true")
     return parser.parse_args()
@@ -505,6 +528,12 @@ def main() -> int:
         threading.Thread(
             target=run_periodic_biden_loop,
             args=(stop_event, float(args.bidens)),
+            daemon=True,
+        ).start()
+    if args.worms > 0:
+        threading.Thread(
+            target=run_periodic_worm_loop,
+            args=(stop_event, float(args.worms)),
             daemon=True,
         ).start()
     if server.snake_enabled and args.fruit_interval_seconds > 0:

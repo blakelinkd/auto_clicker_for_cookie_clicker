@@ -128,6 +128,13 @@ class ServerEventTests(unittest.TestCase):
         self.assertEqual(event["type"], "spawn_fruit")
         self.assertEqual(event["fruit"]["kind"], "frenzy_cookie")
 
+    def test_random_worm_event_is_valid_spawn_event(self):
+        event = server.validate_spawn_event(server.random_worm_event())
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event["type"], "spawn_worm")
+        self.assertEqual(event["source"], "timer")
+
     def test_game_overlay_assets_exist_with_alpha(self):
         for name in ("cursor.png", "frenzy_cookie.png", "grandma_head.png", "grandma_head_smooth.png"):
             path = Path("obs_overlay/assets/game") / name

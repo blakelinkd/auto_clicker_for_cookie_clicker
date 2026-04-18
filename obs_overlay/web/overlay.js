@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-worm-43";
+  const assetVersion = "snake-heat-worm-44";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const fakeCursorSprite = new Image();
@@ -78,6 +78,7 @@
   const wormPoopsToFly = 3;
   const wormRigScale = wormBaseScale;
   const wormDissolveDurationMs = 5000;
+  const wormPoopClaimTimeoutMs = 2500;
   const maxWorms = 6;
   const flySpriteScale = 1.08;
   const flyStartScale = 0.125;
@@ -141,6 +142,7 @@
   let totalGrandmaPoopsSpawned = 0;
   let pendingPoopWormSpawns = 0;
   let bidenSpawnCount = 0;
+  let nextPoopWormId = 1;
   let wormSprite = null;
   let flySprite = null;
   let flyManifest = null;
@@ -2025,6 +2027,7 @@
     const direction = Math.random() < 0.5 ? -1 : 1;
     const left = wormPatrolMargin + Math.random() * Math.max(1, window.innerWidth - wormPatrolMargin * 2 - length);
     poopWorms.push({
+      id: nextPoopWormId++,
       x: direction >= 0 ? left : left + length,
       baselineY: wormSprite.groundBaselineY(groundY, scale),
       scale,
@@ -2058,7 +2061,13 @@
       }
 
       anchorWormToGround(worm, now);
-      worm.targetPoop = nearestTouchablePoop(worm, now);
+      const targetPoop = nearestTouchablePoop(worm, now);
+      if (targetPoop && claimWormPoop(worm, targetPoop, now)) {
+        worm.targetPoop = targetPoop;
+      } else {
+        releaseWormPoopClaim(worm);
+        worm.targetPoop = null;
+      }
       if (!worm.targetPoop) {
         patrolWorm(worm, dt, now);
         continue;
@@ -2073,7 +2082,10 @@
       const horizontalDistanceToTarget = Math.abs(refreshedMouth.x - target.x);
       const touchDistance = poopCurrentSize(target, now) * 0.4 + 10 * worm.scale;
       if (horizontalDistanceToTarget <= touchDistance) {
-        startWormEating(worm, target, now);
+        if (!startWormEating(worm, target, now)) {
+          releaseWormPoopClaim(worm);
+          worm.targetPoop = null;
+        }
         continue;
       }
 
@@ -2105,8 +2117,7 @@
       if (poop.beingEaten) continue;
       if (poop.eatScale != null && poop.eatScale <= 0.05) continue;
       if (!poopIsGroundedForWorm(poop, now)) continue;
-      const isTargeted = poopWorms.some(w => w !== worm && w.targetPoop === poop);
-      if (isTargeted) continue;
+      if (poopClaimedByOtherWorm(poop, worm, now)) continue;
       const poopRadius = poopCurrentSize(poop, now) * 0.4;
       const verticalReach = Math.abs(wormGroundY() - poopFloorBottom(poop, now));
       if (verticalReach > wormGroundReach * worm.scale) continue;
@@ -2117,6 +2128,43 @@
       }
     }
     return best;
+  }
+
+  function activePoopWormById(id) {
+    return poopWorms.find((worm) => worm.id === id && !worm.dissolving) || null;
+  }
+
+  function poopClaimedByOtherWorm(poop, worm, now) {
+    if (poop.claimedByWormId == null || poop.claimedByWormId === worm.id) return false;
+    const owner = activePoopWormById(poop.claimedByWormId);
+    if (!owner || now - (poop.claimedAt || 0) > wormPoopClaimTimeoutMs) {
+      clearPoopClaim(poop);
+      return false;
+    }
+    return true;
+  }
+
+  function claimWormPoop(worm, poop, now) {
+    if (!poop || poop.beingEaten || poopClaimedByOtherWorm(poop, worm, now)) return false;
+    if (worm.targetPoop && worm.targetPoop !== poop) {
+      releaseWormPoopClaim(worm);
+    }
+    poop.claimedByWormId = worm.id;
+    poop.claimedAt = now;
+    worm.targetPoop = poop;
+    return true;
+  }
+
+  function releaseWormPoopClaim(worm) {
+    const poop = worm.targetPoop;
+    if (poop && poop.claimedByWormId === worm.id) {
+      clearPoopClaim(poop);
+    }
+  }
+
+  function clearPoopClaim(poop) {
+    poop.claimedByWormId = null;
+    poop.claimedAt = 0;
   }
 
   function poopIsGroundedForWorm(poop, now) {
@@ -2134,8 +2182,9 @@
   }
 
   function startWormEating(worm, poop, now) {
-    if (poop.beingEaten) return;
-    if (!poopIsGroundedForWorm(poop, now)) return;
+    if (poop.beingEaten) return false;
+    if (!poopIsGroundedForWorm(poop, now)) return false;
+    if (!claimWormPoop(worm, poop, now)) return false;
     poop.beingEaten = true;
     poop.asleep = true;
     poop.vx = 0;
@@ -2147,6 +2196,7 @@
     worm.eatStartedAt = now;
     worm.nextCrunchAt = 0;
     worm.eatingDirection = worm.direction;
+    return true;
   }
 
   function advanceWormEating(worm, now) {
@@ -2164,6 +2214,7 @@
 
     const index = grandmaPoops.indexOf(poop);
     if (index >= 0) grandmaPoops.splice(index, 1);
+    releaseWormPoopClaim(worm);
     worm.eatenPoops = (worm.eatenPoops || 0) + 1;
     worm.scale = Math.min(wormMaxScale, worm.scale * wormGrowthMultiplier);
     anchorWormToGround(worm, now);
@@ -2234,6 +2285,7 @@
 
   function beginWormDissolving(worm, now) {
     if (worm.dissolving) return;
+    releaseWormPoopClaim(worm);
     worm.dissolving = true;
     worm.dissolveStartedAt = now;
     worm.dissolveProgress = 0;

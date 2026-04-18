@@ -224,6 +224,7 @@ def get_config():
         "game_install_dir": str(config.game_install_dir) if config.game_install_dir else None,
         "auto_launch_game": config.auto_launch_game,
         "register_hotkeys": config.register_hotkeys,
+        "overlay_messages": list(config.overlay_messages),
     }
 
 
@@ -256,6 +257,7 @@ def save_config(config_dict):
         wrinkler_mode=current.wrinkler_mode,
         building_caps=current.building_caps,
         ignored_building_caps=current.ignored_building_caps,
+        overlay_messages=tuple(config_dict.get("overlay_messages", current.overlay_messages) or ()),
     )
     save_app_config(config)
     # Update paths if game install dir changed
@@ -1683,6 +1685,9 @@ def start_dashboard(use_qt_hud: bool = True):
         dump_shimmer_data=_dump_shimmer_seed_history,
         get_config=get_config,
         save_config=save_config,
+        send_overlay_message=overlay_event_emitter.send_hud_message,
+        delete_overlay_message=overlay_event_emitter.delete_hud_message,
+        send_biden_timer=overlay_event_emitter.send_biden_timer,
     )
     return build_dashboard(
         callbacks=callbacks,

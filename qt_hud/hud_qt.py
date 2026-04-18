@@ -1,6 +1,8 @@
 import logging
 import time
+from datetime import datetime
 from typing import Optional, Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PySide6.QtCore import Qt, QTimer, QSize, QPoint, QRect
 from PySide6.QtWidgets import (
@@ -394,6 +396,9 @@ class QtDashboard(QMainWindow):
         save_config=None,
         initial_geometry=None,
         refresh_interval_ms=500,
+        send_overlay_message=None,
+        delete_overlay_message=None,
+        send_biden_timer=None,
     ):
         super().__init__()
         self.get_dashboard_state = get_dashboard_state
@@ -417,7 +422,13 @@ class QtDashboard(QMainWindow):
         self.dump_shimmer_data = dump_shimmer_data
         self.get_config = get_config
         self.save_config = save_config
+        self.send_overlay_message = send_overlay_message or (lambda *args, **kwargs: None)
+        self.delete_overlay_message = delete_overlay_message or (lambda *args, **kwargs: None)
+        self.send_biden_timer = send_biden_timer or (lambda *args, **kwargs: None)
         self.refresh_interval_ms = int(refresh_interval_ms)
+        self._overlay_tz = self._resolve_overlay_timezone()
+        self._overlay_card_counter = 0
+        self._overlay_message_cards = {}
 
         # Color palette from theme
         self.COLORS = theme.COLORS
@@ -489,6 +500,7 @@ class QtDashboard(QMainWindow):
         self.forecasts_tab = self._create_forecasts_tab()
         self.feed_tab = self._create_feed_tab()
         self.diagnostics_tab = self._create_diagnostics_tab()
+        self.overlay_tab = self._create_overlay_tab()
 
         self.tab_widget.addTab(self.status_logs_tab, "Status & Logs")
         self.tab_widget.addTab(self.settings_config_tab, "⚙️ Settings / Config")
@@ -498,6 +510,7 @@ class QtDashboard(QMainWindow):
         self.tab_widget.addTab(self.forecasts_tab, "Forecasts")
         self.tab_widget.addTab(self.feed_tab, "Feed")
         self.tab_widget.addTab(self.diagnostics_tab, "Diagnostics")
+        self.tab_widget.addTab(self.overlay_tab, "Overlay")
 
         content_layout.addWidget(self.tab_widget, 1)  # Takes remaining space
 
@@ -509,6 +522,7 @@ class QtDashboard(QMainWindow):
 
         # Map compatibility aliases after all tabs are created
         self._create_compatibility_aliases()
+        self._restore_overlay_messages_from_config()
 
         # Set up refresh timer
         self.timer = QTimer()
@@ -1083,6 +1097,288 @@ class QtDashboard(QMainWindow):
         layout.addStretch()
 
         return tab
+
+    def _create_overlay_tab(self):
+        """Create Overlay tab for sending manual OBS overlay messages."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        header = QLabel("OBS Overlay Messages")
+        header.setStyleSheet(theme.large_label_style())
+        layout.addWidget(header)
+
+        form_panel = QGroupBox("Send Message")
+        form_panel.setStyleSheet(theme.panel_style())
+        form_layout = QGridLayout(form_panel)
+        form_layout.setColumnStretch(1, 1)
+
+        self.overlay_message_input = QLineEdit()
+        self.overlay_message_input.setPlaceholderText("Type a message for the OBS overlay...")
+        self.overlay_message_input.setMaxLength(500)
+        self.overlay_message_input.setStyleSheet(theme.line_edit_style())
+        self.overlay_message_input.returnPressed.connect(self._submit_overlay_message)
+
+        self.overlay_ttl_input = QLineEdit()
+        self.overlay_ttl_input.setPlaceholderText("default 4s")
+        self.overlay_ttl_input.setStyleSheet(theme.line_edit_style())
+
+        self.overlay_repeat_input = QLineEdit()
+        self.overlay_repeat_input.setPlaceholderText("optional")
+        self.overlay_repeat_input.setStyleSheet(theme.line_edit_style())
+
+        self.overlay_submit_btn = QPushButton("Submit")
+        self.overlay_submit_btn.setStyleSheet(theme.button_style("primary"))
+        self.overlay_submit_btn.clicked.connect(self._submit_overlay_message)
+
+        form_layout.addWidget(QLabel("Message"), 0, 0)
+        form_layout.addWidget(self.overlay_message_input, 0, 1, 1, 3)
+        form_layout.addWidget(QLabel("TTL minutes"), 1, 0)
+        form_layout.addWidget(self.overlay_ttl_input, 1, 1)
+        form_layout.addWidget(QLabel("Repeat minutes"), 1, 2)
+        form_layout.addWidget(self.overlay_repeat_input, 1, 3)
+        form_layout.addWidget(self.overlay_submit_btn, 2, 3)
+
+        self.overlay_status_label = QLabel("Blank TTL uses the 4 second default. Blank repeat sends once.")
+        self.overlay_status_label.setStyleSheet(theme.secondary_label_style())
+        form_layout.addWidget(self.overlay_status_label, 2, 0, 1, 3)
+
+        layout.addWidget(form_panel)
+
+        cards_panel = QGroupBox("Saved Messages")
+        cards_panel.setStyleSheet(theme.panel_style())
+        cards_layout = QVBoxLayout(cards_panel)
+        self.overlay_cards_scroll = QScrollArea()
+        self.overlay_cards_scroll.setWidgetResizable(True)
+        self.overlay_cards_scroll.setStyleSheet(theme.scroll_area_style())
+        self.overlay_cards_container = QWidget()
+        self.overlay_cards_layout = QVBoxLayout(self.overlay_cards_container)
+        self.overlay_cards_layout.setContentsMargins(6, 6, 6, 6)
+        self.overlay_cards_layout.setSpacing(10)
+        self.overlay_cards_layout.addStretch()
+        self.overlay_cards_scroll.setWidget(self.overlay_cards_container)
+        cards_layout.addWidget(self.overlay_cards_scroll)
+        layout.addWidget(cards_panel, 1)
+
+        return tab
+
+    def _resolve_overlay_timezone(self):
+        try:
+            return ZoneInfo("America/Chicago")
+        except ZoneInfoNotFoundError:
+            return datetime.now().astimezone().tzinfo
+
+    def _submit_overlay_message(self):
+        message = self.overlay_message_input.text().strip()
+        if not message:
+            self._set_overlay_status("Enter a message before submitting.", error=True)
+            return
+        try:
+            ttl_minutes = self._parse_optional_positive_minutes(self.overlay_ttl_input.text(), "TTL")
+            repeat_minutes = self._parse_optional_positive_minutes(self.overlay_repeat_input.text(), "Repeat interval")
+        except ValueError as exc:
+            self._set_overlay_status(str(exc), error=True)
+            return
+
+        submitted_at = time.time()
+        event_id = self._next_overlay_event_id(submitted_at)
+        self.send_overlay_message(
+            message,
+            ttl_minutes=ttl_minutes,
+            repeat_interval_minutes=repeat_minutes,
+            submitted_at=submitted_at,
+            event_id=event_id,
+        )
+        self._add_overlay_message_card(
+            event_id=event_id,
+            message=message,
+            ttl_minutes=ttl_minutes,
+            repeat_minutes=repeat_minutes,
+            created_at=submitted_at,
+        )
+        self._save_overlay_messages_to_config()
+        self.overlay_message_input.clear()
+        self._set_overlay_status("Message sent to OBS overlay.", error=False)
+
+    def _parse_optional_positive_minutes(self, raw_value, label):
+        value = str(raw_value or "").strip()
+        if not value:
+            return None
+        try:
+            minutes = float(value)
+        except ValueError as exc:
+            raise ValueError(f"{label} must be a number of minutes.") from exc
+        if minutes <= 0:
+            raise ValueError(f"{label} must be greater than zero.")
+        return minutes
+
+    def _set_overlay_status(self, text, *, error):
+        style = theme.accent_red_color_style() if error else theme.accent_green_small_label_style()
+        self.overlay_status_label.setStyleSheet(style)
+        self.overlay_status_label.setText(text)
+
+    def _next_overlay_event_id(self, timestamp):
+        self._overlay_card_counter += 1
+        return f"hud:{int(timestamp * 1000)}:{self._overlay_card_counter}"
+
+    def _add_overlay_message_card(self, *, event_id, message, ttl_minutes, repeat_minutes, created_at):
+        if event_id in self._overlay_message_cards:
+            card = self._overlay_message_cards[event_id]
+            card["message"] = message
+            card["ttl_input"].setText(self._format_optional_minutes(ttl_minutes))
+            card["repeat_input"].setText(self._format_optional_minutes(repeat_minutes))
+            return
+
+        card_widget = QFrame()
+        card_widget.setStyleSheet(
+            f"QFrame {{ background-color: {self.COLORS['panel_bg']}; "
+            f"border: 1px solid {self.COLORS['border_color']}; border-radius: 8px; padding: 8px; }}"
+        )
+        card_layout = QHBoxLayout(card_widget)
+        card_layout.setContentsMargins(10, 8, 10, 8)
+        card_layout.setSpacing(10)
+
+        timestamp = datetime.fromtimestamp(float(created_at), tz=self._overlay_tz).strftime("%I:%M:%S %p").lstrip("0")
+        message_label = QLabel(f"{timestamp}\n{message}")
+        message_label.setWordWrap(True)
+        message_label.setStyleSheet(theme.text_light_color_style())
+        card_layout.addWidget(message_label, 1)
+
+        ttl_input = QLineEdit()
+        ttl_input.setPlaceholderText("4s")
+        ttl_input.setText(self._format_optional_minutes(ttl_minutes))
+        ttl_input.setMaximumWidth(90)
+        ttl_input.setStyleSheet(theme.line_edit_style())
+
+        repeat_input = QLineEdit()
+        repeat_input.setPlaceholderText("once")
+        repeat_input.setText(self._format_optional_minutes(repeat_minutes))
+        repeat_input.setMaximumWidth(90)
+        repeat_input.setStyleSheet(theme.line_edit_style())
+
+        card_layout.addWidget(QLabel("TTL"))
+        card_layout.addWidget(ttl_input)
+        card_layout.addWidget(QLabel("Repeat"))
+        card_layout.addWidget(repeat_input)
+
+        delete_btn = QPushButton("Delete")
+        delete_btn.setStyleSheet(theme.button_style("secondary"))
+        card_layout.addWidget(delete_btn)
+
+        self.overlay_cards_layout.insertWidget(max(0, self.overlay_cards_layout.count() - 1), card_widget)
+        self._overlay_message_cards[event_id] = {
+            "event_id": event_id,
+            "message": message,
+            "created_at": float(created_at),
+            "widget": card_widget,
+            "ttl_input": ttl_input,
+            "repeat_input": repeat_input,
+        }
+        ttl_input.editingFinished.connect(lambda event_id=event_id: self._overlay_card_settings_changed(event_id))
+        repeat_input.editingFinished.connect(lambda event_id=event_id: self._overlay_card_settings_changed(event_id))
+        delete_btn.clicked.connect(lambda _checked=False, event_id=event_id: self._delete_overlay_message_card(event_id))
+
+    def _overlay_card_settings_changed(self, event_id):
+        card = self._overlay_message_cards.get(event_id)
+        if card is None:
+            return
+        try:
+            ttl_minutes = self._parse_optional_positive_minutes(card["ttl_input"].text(), "TTL")
+            repeat_minutes = self._parse_optional_positive_minutes(card["repeat_input"].text(), "Repeat interval")
+        except ValueError as exc:
+            self._set_overlay_status(str(exc), error=True)
+            return
+        self.send_overlay_message(
+            card["message"],
+            ttl_minutes=ttl_minutes,
+            repeat_interval_minutes=repeat_minutes,
+            submitted_at=time.time(),
+            event_id=event_id,
+        )
+        self._save_overlay_messages_to_config()
+        self._set_overlay_status("Overlay message settings updated.", error=False)
+
+    def _delete_overlay_message_card(self, event_id):
+        card = self._overlay_message_cards.pop(event_id, None)
+        if card is None:
+            return
+        card["widget"].setParent(None)
+        card["widget"].deleteLater()
+        self.delete_overlay_message(event_id)
+        self._save_overlay_messages_to_config()
+        self._set_overlay_status("Overlay message deleted.", error=False)
+
+    def _format_optional_minutes(self, value):
+        return "" if value is None else f"{float(value):g}"
+
+    def _overlay_messages_for_config(self):
+        messages = []
+        for event_id, card in self._overlay_message_cards.items():
+            try:
+                ttl_minutes = self._parse_optional_positive_minutes(card["ttl_input"].text(), "TTL")
+                repeat_minutes = self._parse_optional_positive_minutes(card["repeat_input"].text(), "Repeat interval")
+            except ValueError:
+                continue
+            messages.append({
+                "event_id": event_id,
+                "text": card["message"],
+                "ttl_minutes": ttl_minutes,
+                "repeat_interval_minutes": repeat_minutes,
+                "created_at": card["created_at"],
+            })
+        return messages
+
+    def _save_overlay_messages_to_config(self):
+        if self.get_config is None or self.save_config is None:
+            return
+        try:
+            config = dict(self.get_config() or {})
+            config["overlay_messages"] = self._overlay_messages_for_config()
+            self.save_config(config)
+        except Exception as exc:
+            log.debug("Failed to save overlay messages: %s", exc)
+
+    def _restore_overlay_messages_from_config(self):
+        if self.get_config is None:
+            return
+        try:
+            config = self.get_config() or {}
+        except Exception as exc:
+            log.debug("Failed to load overlay messages: %s", exc)
+            return
+        messages = config.get("overlay_messages") if isinstance(config, dict) else []
+        if not isinstance(messages, (list, tuple)):
+            return
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            text = str(message.get("text") or "").strip()
+            if not text:
+                continue
+            created_at = self._safe_float(message.get("created_at"), time.time())
+            event_id = str(message.get("event_id") or self._next_overlay_event_id(created_at))
+            ttl_minutes = self._safe_optional_float(message.get("ttl_minutes"))
+            repeat_minutes = self._safe_optional_float(message.get("repeat_interval_minutes"))
+            self._add_overlay_message_card(
+                event_id=event_id,
+                message=text[:500],
+                ttl_minutes=ttl_minutes,
+                repeat_minutes=repeat_minutes,
+                created_at=created_at,
+            )
+            self.send_overlay_message(
+                text[:500],
+                ttl_minutes=ttl_minutes,
+                repeat_interval_minutes=repeat_minutes,
+                submitted_at=time.time(),
+                event_id=event_id,
+            )
+
+    def _safe_optional_float(self, value):
+        if value is None or value == "":
+            return None
+        return self._safe_float(value, None)
 
     def _create_feed_tab(self):
         """Create Feed tab with color-coded event log."""
@@ -1661,6 +1957,7 @@ class QtDashboard(QMainWindow):
         
         # Update forecasts tab (lumps, golden cookies)
         self._update_forecasts_tab(last_lump_diag, last_golden_diag)
+        self.send_biden_timer(last_golden_diag)
         
         # Update feed tab
         self._update_feed_tab(payload.get("feed", []))

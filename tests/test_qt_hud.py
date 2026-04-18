@@ -157,7 +157,15 @@ def test_qt_dashboard_refresh(qtbot):
     assert new_text != initial_text or "RUNNING" in new_text or "PAUSED" in new_text
 
 
-def _create_test_window(qtbot, refresh_interval_ms=1000):
+def _create_test_window(
+    qtbot,
+    refresh_interval_ms=1000,
+    send_overlay_message=None,
+    delete_overlay_message=None,
+    send_biden_timer=None,
+    get_config=None,
+    save_config=None,
+):
     """Helper to create a QtDashboard instance for testing."""
     callbacks = MockCallbacks()
     window = QtDashboard(
@@ -180,8 +188,11 @@ def _create_test_window(qtbot, refresh_interval_ms=1000):
         cycle_garden_mode=callbacks.cycle_garden_mode,
         exit_program=callbacks.exit_program,
         dump_shimmer_data=callbacks.dump_shimmer_data,
-        get_config=callbacks.get_config,
-        save_config=callbacks.save_config,
+        get_config=get_config or callbacks.get_config,
+        save_config=save_config or callbacks.save_config,
+        send_overlay_message=send_overlay_message,
+        delete_overlay_message=delete_overlay_message,
+        send_biden_timer=send_biden_timer,
         initial_geometry=None,
         refresh_interval_ms=500,
     )
@@ -458,6 +469,132 @@ def test_qt_dashboard_has_status_logs_tab(qtbot):
     tab_names = [tab_widget.tabText(i) for i in range(tab_widget.count())]
     hasStatus = any("Status" in name or "Logs" in name for name in tab_names)
     assert hasStatus
+
+
+@pytest.mark.qt
+def test_qt_dashboard_has_overlay_tab_at_bottom(qtbot):
+    """Check that Overlay tab exists as the last left-side tab."""
+    window = _create_test_window(qtbot)
+    tab_widget = window.tab_widget
+    assert tab_widget.tabText(tab_widget.count() - 1) == "Overlay"
+    assert hasattr(window, 'overlay_message_input')
+    assert hasattr(window, 'overlay_ttl_input')
+    assert hasattr(window, 'overlay_repeat_input')
+    assert hasattr(window, 'overlay_cards_scroll')
+    assert hasattr(window, 'overlay_cards_layout')
+
+
+@pytest.mark.qt
+def test_qt_dashboard_overlay_submit_sends_message_and_adds_card(qtbot):
+    """Submitting the Overlay tab sends the callback and creates a persisted editable card."""
+    sent = []
+    window = _create_test_window(
+        qtbot,
+        send_overlay_message=lambda *args, **kwargs: sent.append((args, kwargs)),
+    )
+
+    window.overlay_message_input.setText("Hello OBS")
+    window.overlay_ttl_input.setText("2")
+    window.overlay_repeat_input.setText("5")
+    window._submit_overlay_message()
+
+    assert len(sent) == 1
+    args, kwargs = sent[0]
+    assert args == ("Hello OBS",)
+    assert kwargs["ttl_minutes"] == 2.0
+    assert kwargs["repeat_interval_minutes"] == 5.0
+    assert kwargs["event_id"] in window._overlay_message_cards
+    assert window.overlay_message_input.text() == ""
+    card = window._overlay_message_cards[kwargs["event_id"]]
+    assert card["message"] == "Hello OBS"
+    assert card["ttl_input"].text() == "2"
+    assert card["repeat_input"].text() == "5"
+
+
+@pytest.mark.qt
+def test_qt_dashboard_overlay_card_edit_and_delete(qtbot):
+    """Overlay card TTL/repeat edits are resent and delete invokes the delete callback."""
+    sent = []
+    deleted = []
+    window = _create_test_window(
+        qtbot,
+        send_overlay_message=lambda *args, **kwargs: sent.append((args, kwargs)),
+        delete_overlay_message=lambda event_id: deleted.append(event_id),
+    )
+
+    window.overlay_message_input.setText("Editable")
+    window.overlay_ttl_input.setText("2")
+    window.overlay_repeat_input.setText("")
+    window._submit_overlay_message()
+    event_id = sent[-1][1]["event_id"]
+    card = window._overlay_message_cards[event_id]
+    card["ttl_input"].setText("3")
+    card["repeat_input"].setText("6")
+    window._overlay_card_settings_changed(event_id)
+
+    assert sent[-1][1]["event_id"] == event_id
+    assert sent[-1][1]["ttl_minutes"] == 3.0
+    assert sent[-1][1]["repeat_interval_minutes"] == 6.0
+
+    window._delete_overlay_message_card(event_id)
+
+    assert deleted == [event_id]
+    assert event_id not in window._overlay_message_cards
+
+
+@pytest.mark.qt
+def test_qt_dashboard_overlay_cards_persist_and_restore(qtbot):
+    """Overlay cards are saved to config and restored into a new HUD instance."""
+    config = {"overlay_messages": []}
+    sent = []
+
+    def save_config(updated):
+        config.clear()
+        config.update(updated)
+
+    window = _create_test_window(
+        qtbot,
+        send_overlay_message=lambda *args, **kwargs: sent.append((args, kwargs)),
+        get_config=lambda: dict(config),
+        save_config=save_config,
+    )
+    window.overlay_message_input.setText("Persistent")
+    window.overlay_ttl_input.setText("7")
+    window.overlay_repeat_input.setText("9")
+    window._submit_overlay_message()
+
+    assert config["overlay_messages"][0]["text"] == "Persistent"
+    assert config["overlay_messages"][0]["ttl_minutes"] == 7.0
+    assert config["overlay_messages"][0]["repeat_interval_minutes"] == 9.0
+
+    restored = _create_test_window(
+        qtbot,
+        send_overlay_message=lambda *args, **kwargs: sent.append((args, kwargs)),
+        get_config=lambda: dict(config),
+        save_config=save_config,
+    )
+
+    assert len(restored._overlay_message_cards) == 1
+    card = next(iter(restored._overlay_message_cards.values()))
+    assert card["message"] == "Persistent"
+    assert card["ttl_input"].text() == "7"
+    assert card["repeat_input"].text() == "9"
+
+
+@pytest.mark.qt
+def test_qt_dashboard_overlay_submit_rejects_empty_message(qtbot):
+    """Empty overlay messages are rejected before invoking the callback."""
+    sent = []
+    window = _create_test_window(
+        qtbot,
+        send_overlay_message=lambda *args, **kwargs: sent.append((args, kwargs)),
+    )
+
+    window.overlay_message_input.setText("   ")
+    window._submit_overlay_message()
+
+    assert sent == []
+    assert "Enter a message" in window.overlay_status_label.text()
 
 
 @pytest.mark.qt

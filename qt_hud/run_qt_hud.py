@@ -125,10 +125,28 @@ class JsonMockCallbacks:
     def dump_shimmer_data(self):
         print("Dump shimmer data")
 
+    def send_overlay_message(self, text, *, ttl_minutes=None, repeat_interval_minutes=None, submitted_at=None, event_id=None):
+        print(
+            "Overlay message: "
+            f"text={text!r} ttl_minutes={ttl_minutes!r} "
+            f"repeat_interval_minutes={repeat_interval_minutes!r} "
+            f"submitted_at={submitted_at!r} event_id={event_id!r}"
+        )
+
+    def delete_overlay_message(self, event_id):
+        print(f"Delete overlay message: {event_id}")
+
+    def send_biden_timer(self, golden_diag):
+        print(f"Biden timer: {golden_diag}")
+
     def get_config(self):
-        return {"game_install_dir": "C:/Steam/..."}
+        return {
+            "game_install_dir": "C:/Steam/...",
+            "overlay_messages": self.state.get("overlay_messages", []),
+        }
 
     def save_config(self, config):
+        self.state["overlay_messages"] = list(config.get("overlay_messages", []))
         print(f"Save config: {config}")
 
 
@@ -152,10 +170,14 @@ def main():
         set_building_cap=callbacks.set_building_cap,
         set_building_cap_ignored=callbacks.set_building_cap_ignored,
         cycle_wrinkler_mode=callbacks.cycle_wrinkler_mode,
+        cycle_garden_mode=callbacks.cycle_garden_mode,
         exit_program=callbacks.exit_program,
         dump_shimmer_data=callbacks.dump_shimmer_data,
         get_config=callbacks.get_config,
         save_config=callbacks.save_config,
+        send_overlay_message=callbacks.send_overlay_message,
+        delete_overlay_message=callbacks.delete_overlay_message,
+        send_biden_timer=callbacks.send_biden_timer,
         initial_geometry="800x600",
         refresh_interval_ms=1000,
     )

@@ -53,6 +53,7 @@ def test_save_and_load_custom_config():
             garden_mode="shimmerlilly",
             building_caps={"Cursor": 123},
             ignored_building_caps=("Mine",),
+            overlay_messages=({"event_id": "hud:test", "text": "Hello", "ttl_minutes": 2.0},),
         )
         save_config(config, config_path)
         # Verify JSON content
@@ -64,6 +65,7 @@ def test_save_and_load_custom_config():
         assert data["automation"]["main_cookie_clicking_enabled"] == False
         assert data["automation"]["wrath_cookie_clicking_enabled"] == False
         assert data["automation"]["building_caps"] == {"Cursor": 123}
+        assert data["automation"]["overlay_messages"] == [{"event_id": "hud:test", "text": "Hello", "ttl_minutes": 2.0}]
         # Load back
         loaded = load_config(config_path)
         assert loaded.register_hotkeys == False
@@ -78,6 +80,7 @@ def test_save_and_load_custom_config():
         assert loaded.garden_mode == "shimmerlilly"
         assert loaded.building_caps == {"Cursor": 123}
         assert loaded.ignored_building_caps == ("Mine",)
+        assert loaded.overlay_messages == ({"event_id": "hud:test", "text": "Hello", "ttl_minutes": 2.0},)
     finally:
         cleanup_workspace_temp_dir(tmpdir)
 

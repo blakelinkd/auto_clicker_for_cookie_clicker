@@ -26,3 +26,4 @@ class AppConfig:
     wrinkler_mode: str = "hold"
     building_caps: dict[str, int] = field(default_factory=dict)
     ignored_building_caps: tuple[str, ...] = field(default_factory=tuple)
+    overlay_messages: tuple[dict, ...] = field(default_factory=tuple)

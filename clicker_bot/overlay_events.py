@@ -1,6 +1,11 @@
 import json
 import socket
+import time
 from typing import Any
+
+
+DEFAULT_HUD_MESSAGE_TTL_MS = 4000
+MAX_HUD_MESSAGE_LENGTH = 500
 
 
 class OverlayEventEmitter:
@@ -54,6 +59,90 @@ class OverlayEventEmitter:
             "animation": {"duration_ms": 3000},
         }
         self.send(payload)
+
+    def send_hud_message(
+        self,
+        text: str,
+        *,
+        ttl_minutes: float | None = None,
+        repeat_interval_minutes: float | None = None,
+        submitted_at: float | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        if not self.enabled:
+            return
+        message = str(text or "").strip()
+        if not message:
+            return
+        message = message[:MAX_HUD_MESSAGE_LENGTH]
+        submitted_at = time.time() if submitted_at is None else float(submitted_at)
+        submitted_at_ms = int(round(submitted_at * 1000))
+        payload: dict[str, Any] = {
+            "version": 1,
+            "type": "hud_message",
+            "event_id": event_id or f"hud:{submitted_at_ms}",
+            "source": "qt_hud",
+            "text": message,
+            "submitted_at_ms": submitted_at_ms,
+            "ttl_ms": self._minutes_to_ms(ttl_minutes, default_ms=DEFAULT_HUD_MESSAGE_TTL_MS),
+        }
+        repeat_ms = self._minutes_to_ms(repeat_interval_minutes, default_ms=None)
+        if repeat_ms is not None:
+            payload["repeat_interval_ms"] = repeat_ms
+        self.send(payload)
+
+    def delete_hud_message(self, event_id: str) -> None:
+        if not self.enabled:
+            return
+        event_id = str(event_id or "").strip()
+        if not event_id:
+            return
+        self.send({
+            "version": 1,
+            "type": "hud_message_delete",
+            "event_id": event_id,
+            "source": "qt_hud",
+        })
+
+    def send_biden_timer(self, golden_diag: dict[str, Any] | None) -> None:
+        if not self.enabled:
+            return
+        if not isinstance(golden_diag, dict) or not golden_diag.get("available"):
+            self.send({
+                "version": 1,
+                "type": "biden_timer",
+                "source": "golden_cookie_forecast",
+                "available": False,
+            })
+            return
+        remaining_seconds = golden_diag.get("median_remaining_seconds")
+        if remaining_seconds is None:
+            remaining_seconds = golden_diag.get("expected_remaining_seconds")
+        try:
+            remaining = max(0.0, float(remaining_seconds))
+        except (TypeError, ValueError):
+            remaining = None
+        self.send({
+            "version": 1,
+            "type": "biden_timer",
+            "source": "golden_cookie_forecast",
+            "available": remaining is not None,
+            "remaining_seconds": remaining,
+            "on_screen": int(golden_diag.get("on_screen") or 0),
+            "updated_at_ms": int(round(time.time() * 1000)),
+        })
+
+    @staticmethod
+    def _minutes_to_ms(value: float | None, *, default_ms: int | None) -> int | None:
+        if value is None:
+            return default_ms
+        try:
+            minutes = float(value)
+        except (TypeError, ValueError):
+            return default_ms
+        if minutes <= 0:
+            return default_ms
+        return int(round(minutes * 60_000))
 
     def send(self, payload: dict[str, Any]) -> None:
         if not self.enabled:

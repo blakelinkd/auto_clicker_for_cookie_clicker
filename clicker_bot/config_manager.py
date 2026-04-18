@@ -47,6 +47,7 @@ def _config_to_dict(config: AppConfig) -> Dict[str, Any]:
             "wrinkler_mode": config.wrinkler_mode,
             "building_caps": dict(config.building_caps),
             "ignored_building_caps": list(config.ignored_building_caps),
+            "overlay_messages": list(config.overlay_messages),
         },
     }
     if config.game_install_dir is not None:
@@ -64,6 +65,9 @@ def _dict_to_config(data: Dict[str, Any]) -> AppConfig:
     ignored_building_caps = automation.get("ignored_building_caps")
     if not isinstance(ignored_building_caps, list):
         ignored_building_caps = []
+    overlay_messages = automation.get("overlay_messages")
+    if not isinstance(overlay_messages, list):
+        overlay_messages = []
     return AppConfig(
         register_hotkeys=data.get("register_hotkeys", True),
         game_install_dir=game_install_dir,
@@ -88,6 +92,11 @@ def _dict_to_config(data: Dict[str, Any]) -> AppConfig:
             if isinstance(cap, (int, float)) and int(cap) >= 0
         },
         ignored_building_caps=tuple(str(name) for name in ignored_building_caps),
+        overlay_messages=tuple(
+            message
+            for message in overlay_messages
+            if isinstance(message, dict) and str(message.get("text") or "").strip()
+        ),
     )
 
 

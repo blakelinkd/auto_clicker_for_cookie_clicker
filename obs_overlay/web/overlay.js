@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-worm-30";
+  const assetVersion = "snake-heat-worm-36";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const fakeCursorSprite = new Image();
@@ -55,6 +55,10 @@
   const poopAirDrag = 0.996;
   const poopAngularDrag = 0.985;
   const poopPhysicsSubstepMs = 16;
+  const poopFloorFootprintScale = 0.72;
+  const poopSleepLinearSpeed = 10;
+  const poopSleepAngularSpeed = 0.16;
+  const poopSleepDelayMs = 650;
   const wormSpawnEveryPoops = 5;
   const wormBaseScale = 1.08;
   const wormCrawlSpeed = 74;
@@ -62,6 +66,7 @@
   const wormInchwormContract = 0.12;
   const wormGroundMargin = 3;
   const wormGroundReach = 28;
+  const wormPatrolMargin = 28;
   const wormEatDurationMs = 3200;
   const wormCrunchIntervalMs = 520;
   const wormHeadShakeSize = 3.5;
@@ -1273,6 +1278,7 @@
       this.minBoneX = 0;
       this.maxBoneX = 0;
       this.boneBaseY = 0;
+      this.opaqueBottomY = 0;
       this.ready = false;
     }
 
@@ -1304,6 +1310,7 @@
       }
       this.imageCanvas = await imageCanvasFromUrl(imageUrl, this.width, this.height);
       this.bonesCanvas = await imageCanvasFromUrl(bonesUrl, this.width, this.height);
+      this.extractImageAlphaBounds();
       this.extractRestBones();
     }
 
@@ -1355,6 +1362,7 @@
       if (!this.imageCanvas || !this.bonesCanvas) {
         throw new Error(`Aseprite sprite must contain ${this.imageLayerName} and ${this.bonesLayerName} layers`);
       }
+      this.extractImageAlphaBounds();
       this.extractRestBones();
     }
 
@@ -1435,6 +1443,19 @@
       }
     }
 
+    extractImageAlphaBounds() {
+      const imageData = this.imageCanvas.getContext("2d").getImageData(0, 0, this.width, this.height).data;
+      let bottom = 0;
+      for (let y = 0; y < this.height; y += 1) {
+        for (let x = 0; x < this.width; x += 1) {
+          if (imageData[(y * this.width + x) * 4 + 3] > 16) {
+            bottom = Math.max(bottom, y);
+          }
+        }
+      }
+      this.opaqueBottomY = bottom;
+    }
+
     buildWavePose(options) {
       const x = options.x || 0;
       const y = options.y || 0;
@@ -1468,7 +1489,8 @@
 
       return this.restPoints.map((point) => {
         const t = (point.x - this.minBoneX) / length;
-        const localX = t * length * lengthFactor;
+        const facingT = direction >= 0 ? t : 1 - t;
+        const localX = facingT * length * lengthFactor;
         const archShape = Math.sin(t * Math.PI);
         const bodyArch = Math.pow(Math.max(0, archShape), 1.45) * arch;
         const bodyRipple = Math.sin(phase * 1.2 + t * Math.PI * 2) * scale * 0.45;
@@ -1491,7 +1513,45 @@
     }
 
     groundBaselineY(groundY, scale) {
-      return groundY - (this.height - this.boneBaseY) * scale;
+      return groundY - (this.opaqueBottomY - this.boneBaseY) * scale;
+    }
+
+    poseDrawBounds(pose, scale) {
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (let i = 0; i < pose.length - 1; i += 1) {
+        const p0 = pose[i];
+        const p1 = pose[i + 1];
+        const sourceBoneY = this.restPoints[i].y;
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
+        const segmentLength = Math.sqrt(dx * dx + dy * dy);
+        if (segmentLength < 0.01) continue;
+        const sin = dy / segmentLength;
+        const cos = dx / segmentLength;
+        const localTop = -sourceBoneY * scale;
+        const localBottom = (this.opaqueBottomY - sourceBoneY) * scale;
+        const corners = [
+          transformLocalPoint(p0, cos, sin, 0, localTop),
+          transformLocalPoint(p0, cos, sin, segmentLength, localTop),
+          transformLocalPoint(p0, cos, sin, 0, localBottom),
+          transformLocalPoint(p0, cos, sin, segmentLength, localBottom),
+        ];
+        for (const corner of corners) {
+          minX = Math.min(minX, corner.x);
+          maxX = Math.max(maxX, corner.x);
+          minY = Math.min(minY, corner.y);
+          maxY = Math.max(maxY, corner.y);
+        }
+      }
+      return {
+        minX: Number.isFinite(minX) ? minX : 0,
+        maxX: Number.isFinite(maxX) ? maxX : 0,
+        minY: Number.isFinite(minY) ? minY : 0,
+        maxY: Number.isFinite(maxY) ? maxY : 0,
+      };
     }
 
     draw(ctx, pose, options = {}) {
@@ -1566,6 +1626,13 @@
     });
   }
 
+  function transformLocalPoint(origin, cos, sin, x, y) {
+    return {
+      x: origin.x + x * cos - y * sin,
+      y: origin.y + x * sin + y * cos,
+    };
+  }
+
   function interpolateBoneColumn(columns, x) {
     if (x <= columns[0].x) return columns[0].y;
     for (let i = 1; i < columns.length; i += 1) {
@@ -1617,6 +1684,7 @@
       eatScale: 1,
       eatShake: 0,
       beingEaten: false,
+      floorContactSince: 0,
     });
     if (grandmaPoops.length > 80) grandmaPoops.shift();
     totalGrandmaPoopsSpawned += 1;
@@ -1676,6 +1744,7 @@
   }
 
   function integrateGrandmaPoop(poop, dt) {
+    if (poop.asleep) return;
     poop.vy += poopGravity * dt;
     poop.vx *= Math.pow(poopAirDrag, dt * 60);
     poop.vy *= Math.pow(poopAirDrag, dt * 60);
@@ -1707,21 +1776,44 @@
       poop.angularVelocity *= -poopFriction;
     }
 
-    const floorBounds = poopAabb(poop, now);
-    if (floorBounds.maxY > window.innerHeight) {
-      poop.y -= floorBounds.maxY - window.innerHeight;
+    const floorBottom = poopFloorBottom(poop, now);
+    if (floorBottom > window.innerHeight) {
+      poop.y -= floorBottom - window.innerHeight;
       poop.vy = -Math.abs(poop.vy) * poopRestitution;
-      poop.vx *= poopFriction;
-      poop.angularVelocity *= poopFriction;
-      if (Math.abs(poop.vy) < 18) poop.vy = 0;
-      if (Math.abs(poop.vx) < 5) poop.vx = 0;
-      if (Math.abs(poop.angularVelocity) < 0.08) poop.angularVelocity = 0;
+      poop.vx *= poopFriction * 0.72;
+      poop.angularVelocity *= poopFriction * 0.55;
+      if (!poop.floorContactSince) poop.floorContactSince = now;
+      if (Math.abs(poop.vy) < poopSleepLinearSpeed * 1.8) poop.vy = 0;
+      if (Math.abs(poop.vx) < poopSleepLinearSpeed) poop.vx = 0;
+      if (Math.abs(poop.angularVelocity) < poopSleepAngularSpeed) poop.angularVelocity = 0;
+      maybeSleepPoop(poop, now);
+    } else {
+      poop.floorContactSince = 0;
+      poop.asleep = false;
     }
+  }
+
+  function poopFloorBottom(poop, now) {
+    const size = poopCurrentSize(poop, now);
+    const halfHeight = size * 0.42 * poopFloorFootprintScale;
+    return poop.y + halfHeight;
+  }
+
+  function maybeSleepPoop(poop, now) {
+    if (!poop.floorContactSince || now - poop.floorContactSince < poopSleepDelayMs) return;
+    const linearSpeed = Math.sqrt(poop.vx * poop.vx + poop.vy * poop.vy);
+    if (linearSpeed > poopSleepLinearSpeed || Math.abs(poop.angularVelocity) > poopSleepAngularSpeed) return;
+    poop.vx = 0;
+    poop.vy = 0;
+    poop.angularVelocity = 0;
+    poop.asleep = true;
   }
 
   function resolvePoopCollision(first, second, now) {
     const collision = poopRotatedRectCollision(first, second, now);
     if (!collision) return false;
+    first.asleep = false;
+    second.asleep = false;
 
     const correctionX = collision.normal.x * collision.depth * 0.5;
     const correctionY = collision.normal.y * collision.depth * 0.5;
@@ -1871,20 +1963,23 @@
   function spawnPoopWorm(now) {
     if (!wormSprite || !wormSprite.ready) return false;
     const groundY = wormGroundY();
-    const spawnFromLeft = Math.random() < 0.5;
     const scale = wormBaseScale;
     const length = wormSprite.lengthAtScale(scale);
+    const x = wormPatrolMargin + Math.random() * Math.max(1, window.innerWidth - wormPatrolMargin * 2 - length);
+    const direction = Math.random() < 0.5 ? -1 : 1;
     poopWorms.push({
-      x: spawnFromLeft ? -length * 0.35 : window.innerWidth + length * 0.35,
+      x,
       baselineY: wormSprite.groundBaselineY(groundY, scale),
       scale,
-      direction: spawnFromLeft ? 1 : -1,
+      direction,
+      patrolDirection: direction,
       phase: Math.random() * Math.PI * 2,
       lastFrameAt: now,
       targetPoop: null,
       eatingPoop: null,
       eatStartedAt: 0,
       nextCrunchAt: 0,
+      eatingDirection: direction,
     });
     return true;
   }
@@ -1895,7 +1990,7 @@
     for (const worm of poopWorms) {
       const dt = Math.min(100, Math.max(0, now - (worm.lastFrameAt || now))) / 1000;
       worm.lastFrameAt = now;
-      worm.baselineY = wormSprite.groundBaselineY(wormGroundY(), worm.scale);
+      anchorWormToGround(worm);
       worm.phase += dt * (worm.eatingPoop ? 11.5 : 8.5);
 
       if (worm.eatingPoop) {
@@ -1904,7 +1999,10 @@
       }
 
       worm.targetPoop = nearestTouchablePoop(worm, now);
-      if (!worm.targetPoop) continue;
+      if (!worm.targetPoop) {
+        patrolWorm(worm, dt);
+        continue;
+      }
 
       const pose = wormPose(worm);
       const mouth = wormSprite.mouthPoint(pose);
@@ -1913,7 +2011,7 @@
       const refreshedPose = wormPose(worm);
       const refreshedMouth = wormSprite.mouthPoint(refreshedPose);
       const horizontalDistanceToTarget = Math.abs(refreshedMouth.x - target.x);
-      const touchDistance = poopCurrentSize(target, now) * 0.48 + 10 * worm.scale;
+      const touchDistance = poopCurrentSize(target, now) * 0.18 + 10 * worm.scale;
       if (horizontalDistanceToTarget <= touchDistance) {
         startWormEating(worm, target, now);
         continue;
@@ -1924,13 +2022,28 @@
     }
   }
 
+  function patrolWorm(worm, dt) {
+    worm.direction = worm.patrolDirection || worm.direction || 1;
+    worm.x += worm.direction * wormCrawlSpeed * worm.scale * dt * 0.62;
+    const length = wormSprite.lengthAtScale(worm.scale);
+    if (worm.x < wormPatrolMargin) {
+      worm.x = wormPatrolMargin;
+      worm.patrolDirection = 1;
+      worm.direction = 1;
+    } else if (worm.x + length > window.innerWidth - wormPatrolMargin) {
+      worm.x = window.innerWidth - wormPatrolMargin - length;
+      worm.patrolDirection = -1;
+      worm.direction = -1;
+    }
+  }
+
   function nearestTouchablePoop(worm, now) {
     let best = null;
     let bestDistance = Infinity;
     const mouth = wormSprite.mouthPoint(wormPose(worm));
     for (const poop of grandmaPoops) {
-      if (poop.beingEaten) continue;
-      const poopRadius = poopCurrentSize(poop, now) / 2;
+      if (poop.eatScale != null && poop.eatScale <= 0.05) continue;
+      const poopRadius = poopCurrentSize(poop, now) * 0.18;
       const verticalReach = Math.abs(wormGroundY() - poop.y) - poopRadius;
       if (verticalReach > wormGroundReach * worm.scale) continue;
       const distance = Math.abs(mouth.x - poop.x) - poopRadius;
@@ -1943,14 +2056,11 @@
   }
 
   function startWormEating(worm, poop, now) {
-    poop.beingEaten = true;
-    poop.vx = 0;
-    poop.vy = 0;
-    poop.angularVelocity *= 0.25;
     worm.eatingPoop = poop;
     worm.targetPoop = poop;
     worm.eatStartedAt = now;
     worm.nextCrunchAt = 0;
+    worm.eatingDirection = worm.direction;
   }
 
   function advanceWormEating(worm, now) {
@@ -1959,7 +2069,7 @@
     const progress = clamp01((now - worm.eatStartedAt) / wormEatDurationMs);
     poop.eatScale = Math.max(0, 1 - progress);
     poop.eatShake = Math.sin(now / 22) * (1 - progress) * 7;
-    worm.direction = poop.x >= wormSprite.mouthPoint(wormPose(worm)).x ? 1 : -1;
+    worm.direction = worm.eatingDirection || worm.direction;
     if (now >= worm.nextCrunchAt) {
       playSound(sounds.chomp);
       worm.nextCrunchAt = now + wormCrunchIntervalMs;
@@ -1969,14 +2079,23 @@
     const index = grandmaPoops.indexOf(poop);
     if (index >= 0) grandmaPoops.splice(index, 1);
     worm.scale *= wormGrowthMultiplier;
-    worm.baselineY = wormSprite.groundBaselineY(wormGroundY(), worm.scale);
+    anchorWormToGround(worm);
     worm.eatingPoop = null;
     worm.targetPoop = null;
     worm.eatStartedAt = 0;
+    worm.patrolDirection = worm.direction;
   }
 
   function wormGroundY() {
     return window.innerHeight - wormGroundMargin;
+  }
+
+  function anchorWormToGround(worm) {
+    worm.baselineY = wormSprite.groundBaselineY(wormGroundY(), worm.scale);
+    const pose = wormPose(worm);
+    const bounds = wormSprite.poseDrawBounds(pose, worm.scale);
+    if (!Number.isFinite(bounds.maxY)) return;
+    worm.baselineY += wormGroundY() - bounds.maxY;
   }
 
   function wormPose(worm) {

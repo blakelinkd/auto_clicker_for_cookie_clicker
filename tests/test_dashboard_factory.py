@@ -25,6 +25,9 @@ class DashboardFactoryTests(unittest.TestCase):
             cycle_garden_mode=lambda: None,
             exit_program=lambda: None,
             dump_shimmer_data=lambda: None,
+            send_overlay_message=lambda *args, **kwargs: None,
+            delete_overlay_message=lambda *args, **kwargs: None,
+            send_biden_timer=lambda *args, **kwargs: None,
         )
 
         # Since we prefer Qt when available, patch QtDashboard
@@ -38,5 +41,8 @@ class DashboardFactoryTests(unittest.TestCase):
         dashboard_cls.assert_called_once()
         kwargs = dashboard_cls.call_args.kwargs
         self.assertIs(kwargs["get_dashboard_state"], callbacks.get_dashboard_state)
+        self.assertIs(kwargs["send_overlay_message"], callbacks.send_overlay_message)
+        self.assertIs(kwargs["delete_overlay_message"], callbacks.delete_overlay_message)
+        self.assertIs(kwargs["send_biden_timer"], callbacks.send_biden_timer)
         self.assertEqual(kwargs["initial_geometry"], "800x600")
         self.assertEqual(kwargs["refresh_interval_ms"], 500)

@@ -1642,7 +1642,11 @@ class DomShimmerHandlerTests(unittest.TestCase):
 
         self.assertTrue(result.handled)
         self.assertEqual(calls["clicks"], [(140, 250, {"hold": 0.035})])
-        self.assertEqual(calls["overlay"], [(first_shimmer, {"mode": "clicked", "clicked_at": 15.0})])
+        self.assertEqual(calls["overlay"], [
+            (first_shimmer, {"mode": "visible_preview", "clicked_at": 10.0}),
+            (second_shimmer, {"mode": "visible_preview", "clicked_at": 10.0}),
+            (first_shimmer, {"mode": "clicked", "clicked_at": 15.0}),
+        ])
 
     def test_process_emits_overlay_for_skipped_wrath_cookie(self):
         shimmer = {

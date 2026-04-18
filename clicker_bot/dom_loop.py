@@ -1098,6 +1098,7 @@ class DomShimmerHandler:
             and priority_shimmer.get("wrath")
             and self._should_skip_wrath_shimmer(context.buffs)
         )
+        self._emit_multi_shimmer_overlay_previews(context)
         if (
             context.shimmer_autoclick_enabled
             and priority_shimmer is not None
@@ -1316,6 +1317,18 @@ class DomShimmerHandler:
         if len(context.shimmers) > 1:
             return False
         return True
+
+    def _emit_multi_shimmer_overlay_previews(self, context: DomShimmerContext) -> None:
+        if self._overlay_event_sender is None:
+            return
+        if len(context.shimmers) <= 1:
+            return
+        for shimmer in context.shimmers:
+            shimmer_id = int(shimmer["id"])
+            if shimmer_id in self._overlay_preview_started:
+                continue
+            self._emit_overlay_spawn(shimmer, mode="visible_preview", clicked_at=context.now)
+            self._overlay_preview_started[shimmer_id] = context.now
 
     def _emit_overlay_spawn(self, shimmer: dict[str, Any], *, mode: str, clicked_at: float) -> None:
         if self._overlay_event_sender is None:

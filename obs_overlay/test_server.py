@@ -70,7 +70,7 @@ class ServerEventTests(unittest.TestCase):
         self.assertEqual(event["fruit"]["kind"], "frenzy_cookie")
 
     def test_game_overlay_assets_exist_with_alpha(self):
-        for name in ("frenzy_cookie.png", "grandma_head.png", "grandma_head_smooth.png"):
+        for name in ("cursor.png", "frenzy_cookie.png", "grandma_head.png", "grandma_head_smooth.png"):
             path = Path("obs_overlay/assets/game") / name
             self.assertTrue(path.is_file(), name)
             image = Image.open(path)

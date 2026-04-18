@@ -4,9 +4,10 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-20";
+  const assetVersion = "snake-heat-23";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
+  const fakeCursorSprite = new Image();
   const sounds = {
     dean: createAudioPool(`/assets/audio/dean_scream.mp3?v=${assetVersion}`, 0.65, 3),
     grandma: createAudioPool(`/assets/audio/grandma_cookie.mp3?v=${assetVersion}`, 0.45, 4),
@@ -19,7 +20,8 @@
   const snakeHeadDrawSize = 64;
   const snakeBodyDrawSize = 54;
   const cellSize = 68;
-  const segmentCollisionGap = 4;
+  const segmentCollisionGap = 0;
+  const heatSegmentVisualGap = 2;
   const snakeTickMs = 230;
   const heatCandidateAngles = [0, 35, -35, 70, -70, 110, -110, 145, -145, 180];
   const enrageSpeedMultiplier = 1.82;
@@ -30,6 +32,14 @@
   const babyGrandmaSpeedMultiplier = 0.84;
   const bidenEatRadius = cellSize * 1.08;
   const bidenCloseRange = cellSize * 3.2;
+  const bidenWaypointLimit = 10;
+  const fakeCursorDrawSize = 64;
+  const fakeCursorSpeed = 92 * 3;
+  const fakeCursorMinPauseMs = 1000;
+  const fakeCursorMaxPauseMs = 5000;
+  const fakeCursorMinPathMs = 2600;
+  const fakeCursorMaxPathMs = 7200;
+  const twitchChatQuipIntervalMs = 180000;
   const snake = {
     mode: "heat",
     segments: [],
@@ -56,10 +66,20 @@
     heatRecoveryUntil: 0,
   };
   const babyGrandmaSnakes = [];
+  const bidenWaypointBuffer = [];
+  const fakeCursor = {
+    x: 0,
+    y: 0,
+    initialized: false,
+    path: null,
+    waitUntil: 0,
+  };
   const combatLog = [];
   let lastDurgularYell = 0;
+  let lastTwitchChatQuip = 0;
   let bidenSpawnCount = 0;
   const biotachyonicWhisper = "it's supposed to look like biden is popping the cookies...";
+  const twitchChatQuip = "Feel free to point out any bugs, make suggestions or request in the twitch chat!";
   const bidenFocusLines = [
     "Oh, it's focused.",
     "I'd say it's... I think it's...",
@@ -68,6 +88,20 @@
     "I haven't noticed things I can't do.",
     "Physical, mental, anything else.",
   ];
+  /*
+   * Current WoW class colors from RAID_CLASS_COLORS / C_ClassColor.GetClassColor():
+   * Death Knight #C41E3A, Demon Hunter #A330C9, Druid #FF7C0A,
+   * Evoker #33937F, Hunter #AAD372, Mage #3FC7EB, Monk #00FF98,
+   * Paladin #F48CBA, Priest #FFFFFF, Rogue #FFF468, Shaman #0070DD,
+   * Warlock #8788EE, Warrior #C69B6D.
+   */
+  const wowClassColors = {
+    biden: [170, 211, 114],
+    durgular: [198, 155, 109],
+    grandma: [135, 136, 238],
+    biotachyonic: [255, 124, 10],
+    fakecursor: [63, 199, 235],
+  };
   const durgularLines = [
     "DURGULAAAAAR!",
     "DURGULAR!!",
@@ -78,6 +112,7 @@
 
   bidenSprite.src = "/assets/biden_i_did_that.png";
   grandmaHeadSprite.src = `/assets/game/grandma_head_smooth.png?v=${assetVersion}`;
+  fakeCursorSprite.src = `/assets/game/cursor.png?v=${assetVersion}`;
 
   function createAudioPool(src, volume, count) {
     const clips = [];
@@ -240,6 +275,7 @@
       existingSpawn.mode = payload.mode || existingSpawn.mode || null;
       existingSpawn.beingEaten = false;
       existingSpawn.eatenAt = null;
+      rememberBidenWaypoint(normX, normY);
       return true;
     }
 
@@ -260,6 +296,7 @@
     if (shimmerId !== null) {
       bidenSpawnByShimmerId.set(shimmerId, spawn);
     }
+    rememberBidenWaypoint(normX, normY);
     const now = spawn.startedAt;
     bidenSpawnCount += 1;
     queueBidenFocusTalk(now);
@@ -271,6 +308,13 @@
     }
     playSound(sounds.dean);
     return true;
+  }
+
+  function rememberBidenWaypoint(normX, normY) {
+    bidenWaypointBuffer.push({ normX, normY });
+    while (bidenWaypointBuffer.length > bidenWaypointLimit) {
+      bidenWaypointBuffer.shift();
+    }
   }
 
   function queueBidenFocusTalk(now) {
@@ -290,6 +334,16 @@
     const index = Math.floor(now / 20000) % durgularLines.length;
     addCombatLogLine("durgular", durgularLines[index], now);
     lastDurgularYell = now;
+  }
+
+  function maybeAddTwitchChatQuip(now) {
+    if (lastTwitchChatQuip === 0) {
+      lastTwitchChatQuip = now;
+      return;
+    }
+    if (now - lastTwitchChatQuip < twitchChatQuipIntervalMs) return;
+    addCombatLogLine("biotachyonic", twitchChatQuip, now, "whisper");
+    lastTwitchChatQuip = now;
   }
 
   function refreshBidenCells() {
@@ -402,6 +456,7 @@
     spawn.beingEaten = true;
     spawn.eatenAt = now;
     snake.eatenCount += 1;
+    maybeAddFakeCursorEatQuip(now);
     if (!isEnraged(now)) {
       snake.enrageEatenCount = Math.min(snake.enrageEatenThreshold, snake.enrageEatenCount + 1);
     }
@@ -421,6 +476,11 @@
     snake.enrageEndedAt = 0;
     snake.enrageEatenCount = snake.enrageEatenThreshold;
     addCombatLogLine("grandma", "ENRAGED!", now, "shout");
+  }
+
+  function maybeAddFakeCursorEatQuip(now) {
+    if (snake.eatenCount % 6 !== 3) return;
+    addCombatLogLine("FakeCursor", "Is it just me, or is granda looking thick?", now);
   }
 
   function updateEnrageState(now) {
@@ -697,7 +757,6 @@
     if (heatSnake.heatRecoveryUntil > now) {
       desired = normalizeVector(addVectors(desired, scaleVector(inwardWallVector(head), 4.5)));
     }
-    desired = normalizeVector(addVectors(desired, heatTailAvoidanceVector(head, desired, maxStep, sizes, heatSnake)));
 
     const previousHead = { x: head.x, y: head.y };
     const chosenMove = chooseHeatMove(head, desired, maxStep, sizes, targetPoint, heatSnake);
@@ -705,13 +764,6 @@
     head.y = chosenMove.y;
     heatSnake.heatDirection = chosenMove.direction;
     clampHeatSegmentsToViewport(heatSnake);
-    if (heatHeadCollidesWithTail(head, sizes, heatSnake)) {
-      const sidestep = chooseHeatSidestep(previousHead, desired, maxStep, sizes, targetPoint, heatSnake);
-      head.x = sidestep.x;
-      head.y = sidestep.y;
-      heatSnake.heatDirection = sidestep.direction;
-      clampHeatSegmentsToViewport(heatSnake);
-    }
     if (updateHeatStuckState(previousHead, head, now, heatSnake) || heatSnake.heatRecoveryUntil > now) {
       applyHeatStuckRecovery(head, sizes, maxStep, now, heatSnake);
     }
@@ -784,7 +836,6 @@
       segment.x = moved.x;
       segment.y = moved.y;
     }
-    enforceSegmentCollisionGaps(heatSnake.heatSegments, sizes, 1);
     clampHeatSegmentsToViewport(heatSnake);
   }
 
@@ -930,46 +981,6 @@
     return pressure;
   }
 
-  function heatTailAvoidanceVector(head, desired, maxStep, sizes, heatSnake = snake) {
-    const predicted = {
-      x: head.x + desired.x * maxStep,
-      y: head.y + desired.y * maxStep,
-    };
-    const headRadius = segmentCollisionRadius(0, sizes);
-    const avoidanceRange = headRadius + snakeBodyDrawSize * 0.85;
-    let avoid = { x: 0, y: 0 };
-
-    for (let i = 2; i < heatSnake.heatSegments.length; i += 1) {
-      const segment = heatSnake.heatSegments[i];
-      const requiredDistance = segmentCollisionSpacing(0, i, sizes);
-      const dx = predicted.x - segment.x;
-      const dy = predicted.y - segment.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      const influence = Math.max(requiredDistance + avoidanceRange, 1);
-      if (distance >= influence) continue;
-
-      const strength = (influence - distance) / influence;
-      const pushX = distance > 0.001 ? dx / distance : -desired.y;
-      const pushY = distance > 0.001 ? dy / distance : desired.x;
-      avoid.x += pushX * strength * 2.2;
-      avoid.y += pushY * strength * 2.2;
-    }
-    return avoid;
-  }
-
-  function heatHeadCollidesWithTail(head, sizes, heatSnake = snake) {
-    for (let i = 2; i < heatSnake.heatSegments.length; i += 1) {
-      if (pixelDistance(head, heatSnake.heatSegments[i]) < segmentCollisionSpacing(0, i, sizes)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function chooseHeatSidestep(previousHead, desired, maxStep, sizes, targetPoint, heatSnake = snake) {
-    return chooseHeatMove(previousHead, desired, maxStep, sizes, targetPoint, heatSnake);
-  }
-
   function chooseHeatMove(origin, desired, maxStep, sizes, targetPoint, heatSnake = snake) {
     if (maxStep <= 0.001) {
       return { x: origin.x, y: origin.y, direction: normalizeVector(desired) };
@@ -1038,9 +1049,6 @@
   }
 
   function scoreHeatMove(origin, point, direction, baseDirection, sizes, targetPoint, heatSnake = snake) {
-    const clearance = heatTailClearance(point, sizes, heatSnake);
-    const requiredClearance = minHeatTailSpacing(sizes);
-    const collisionPenalty = clearance < requiredClearance ? (requiredClearance - clearance) * 80 : 0;
     const wallMargin = heatWallMargin(point);
     const turnPenalty = (1 - Math.max(-1, Math.min(1, direction.x * baseDirection.x + direction.y * baseDirection.y))) * 14;
     const movement = pixelDistance(origin, point);
@@ -1054,30 +1062,12 @@
     const wallPenalty = wallEscapeMagnitude(point) * 22;
     const outwardPenalty = outwardWallPressure(origin, direction) * 120;
 
-    return clearance * 4 + wallMargin * 0.25 + movement * 2 + targetGain * 6 + closeTargetBonus - turnPenalty - collisionPenalty - wallPenalty - outwardPenalty;
+    return wallMargin * 0.25 + movement * 2 + targetGain * 6 + closeTargetBonus - turnPenalty - wallPenalty - outwardPenalty;
   }
 
   function wallEscapeMagnitude(point) {
     const escape = wallEscapeVector(point, null);
     return Math.sqrt(escape.x * escape.x + escape.y * escape.y);
-  }
-
-  function heatTailClearance(point, sizes, heatSnake = snake) {
-    let clearance = Infinity;
-    for (let i = 2; i < heatSnake.heatSegments.length; i += 1) {
-      const distance = pixelDistance(point, heatSnake.heatSegments[i]) - segmentCollisionSpacing(0, i, sizes);
-      clearance = Math.min(clearance, distance);
-    }
-    return Number.isFinite(clearance) ? clearance : minHeatTailSpacing(sizes);
-  }
-
-  function minHeatTailSpacing(sizes) {
-    if (sizes.length < 3) return 0;
-    let spacing = Infinity;
-    for (let i = 2; i < sizes.length; i += 1) {
-      spacing = Math.min(spacing, segmentCollisionSpacing(0, i, sizes));
-    }
-    return Number.isFinite(spacing) ? spacing : 0;
   }
 
   function heatWallMargin(point) {
@@ -1095,7 +1085,7 @@
     for (let i = 1; i < heatSnake.heatSegments.length; i += 1) {
       const leader = heatSnake.heatSegments[i - 1];
       const follower = heatSnake.heatSegments[i];
-      const spacing = segmentCollisionSpacing(i - 1, i, sizes);
+      const spacing = heatSegmentSpacing(i - 1, i, sizes);
       const dx = follower.x - leader.x;
       const dy = follower.y - leader.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
@@ -1104,7 +1094,6 @@
         follower.y = leader.y + (dy / distance) * spacing;
       }
     }
-    enforceSegmentCollisionGaps(heatSnake.heatSegments, sizes, 1);
   }
 
   function interpolatedSegments(now) {
@@ -1255,6 +1244,14 @@
     return collisionSpacing;
   }
 
+  function heatSegmentSpacing(firstIndex, secondIndex, sizes) {
+    const firstBaseSize = firstIndex === 0 ? snakeHeadDrawSize : snakeBodyDrawSize;
+    const secondBaseSize = secondIndex === 0 ? snakeHeadDrawSize : snakeBodyDrawSize;
+    const firstRadius = (firstBaseSize * sizes[firstIndex]) / 2;
+    const secondRadius = (secondBaseSize * sizes[secondIndex]) / 2;
+    return Math.max(4, firstRadius + secondRadius - heatSegmentVisualGap);
+  }
+
   function enforceSegmentCollisionGaps(segments, sizes, coordinateScale) {
     for (let i = 1; i < segments.length; i += 1) {
       for (let j = 0; j < i; j += 1) {
@@ -1361,6 +1358,157 @@
     ctx.fillRect(drawX, drawY, drawWidth, drawHeight);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
+  }
+
+  function updateFakeCursor(now) {
+    if (!fakeCursor.initialized) {
+      fakeCursor.x = window.innerWidth * 0.5;
+      fakeCursor.y = window.innerHeight * 0.5;
+      fakeCursor.initialized = true;
+      fakeCursor.waitUntil = now + randomFakeCursorPauseMs();
+      return;
+    }
+
+    if (now < fakeCursor.waitUntil) return;
+    if (!fakeCursor.path) {
+      fakeCursor.path = buildFakeCursorPath(now);
+      return;
+    }
+
+    const progress = Math.max(0, Math.min(1, (now - fakeCursor.path.startedAt) / fakeCursor.path.durationMs));
+    const eased = easeInOutSine(progress);
+    const point = sampleCubicBezier(
+      fakeCursor.path.start,
+      fakeCursor.path.controlA,
+      fakeCursor.path.controlB,
+      fakeCursor.path.end,
+      eased
+    );
+    fakeCursor.x = point.x;
+    fakeCursor.y = point.y;
+    if (progress >= 1) {
+      fakeCursor.x = fakeCursor.path.end.x;
+      fakeCursor.y = fakeCursor.path.end.y;
+      fakeCursor.path = null;
+      fakeCursor.waitUntil = now + randomFakeCursorPauseMs();
+    }
+  }
+
+  function buildFakeCursorPath(now) {
+    const start = { x: fakeCursor.x, y: fakeCursor.y };
+    const end = chooseFakeCursorWaypoint();
+    const distance = Math.max(1, pixelDistance(start, end));
+    const durationMs = Math.max(
+      fakeCursorMinPathMs,
+      Math.min(fakeCursorMaxPathMs, (distance / fakeCursorSpeed) * 1000 * (1.35 + Math.random() * 0.8))
+    );
+    const midpoint = {
+      x: (start.x + end.x) / 2,
+      y: (start.y + end.y) / 2,
+    };
+    const angle = Math.atan2(end.y - start.y, end.x - start.x);
+    const normal = {
+      x: -Math.sin(angle),
+      y: Math.cos(angle),
+    };
+    const curveStrength = Math.min(Math.max(distance * (0.22 + Math.random() * 0.38), 80), 360);
+    const curveSign = Math.random() < 0.5 ? -1 : 1;
+    const randomA = randomScreenPoint(0.08, 0.92);
+    const randomB = randomScreenPoint(0.08, 0.92);
+    return {
+      start,
+      controlA: clampScreenPoint({
+        x: start.x + (midpoint.x - start.x) * 0.55 + normal.x * curveStrength * curveSign + (randomA.x - midpoint.x) * 0.22,
+        y: start.y + (midpoint.y - start.y) * 0.55 + normal.y * curveStrength * curveSign + (randomA.y - midpoint.y) * 0.22,
+      }),
+      controlB: clampScreenPoint({
+        x: end.x + (midpoint.x - end.x) * 0.55 - normal.x * curveStrength * curveSign + (randomB.x - midpoint.x) * 0.22,
+        y: end.y + (midpoint.y - end.y) * 0.55 - normal.y * curveStrength * curveSign + (randomB.y - midpoint.y) * 0.22,
+      }),
+      end,
+      startedAt: now,
+      durationMs,
+    };
+  }
+
+  function chooseFakeCursorWaypoint() {
+    if (bidenWaypointBuffer.length > 0 && Math.random() < 0.72) {
+      const waypoint = bidenWaypointBuffer[Math.floor(Math.random() * bidenWaypointBuffer.length)];
+      return {
+        x: waypoint.normX * window.innerWidth,
+        y: waypoint.normY * window.innerHeight,
+      };
+    }
+    return randomScreenPoint(0.12, 0.88);
+  }
+
+  function randomScreenPoint(min, max) {
+    return {
+      x: window.innerWidth * (min + Math.random() * (max - min)),
+      y: window.innerHeight * (min + Math.random() * (max - min)),
+    };
+  }
+
+  function clampScreenPoint(point) {
+    const margin = fakeCursorDrawSize / 2;
+    return {
+      x: Math.max(margin, Math.min(window.innerWidth - margin, point.x)),
+      y: Math.max(margin, Math.min(window.innerHeight - margin, point.y)),
+    };
+  }
+
+  function sampleCubicBezier(start, controlA, controlB, end, t) {
+    const inv = 1 - t;
+    const inv2 = inv * inv;
+    const t2 = t * t;
+    return {
+      x: inv2 * inv * start.x + 3 * inv2 * t * controlA.x + 3 * inv * t2 * controlB.x + t2 * t * end.x,
+      y: inv2 * inv * start.y + 3 * inv2 * t * controlA.y + 3 * inv * t2 * controlB.y + t2 * t * end.y,
+    };
+  }
+
+  function easeInOutSine(t) {
+    return -(Math.cos(Math.PI * t) - 1) / 2;
+  }
+
+  function randomFakeCursorPauseMs() {
+    return fakeCursorMinPauseMs + Math.random() * (fakeCursorMaxPauseMs - fakeCursorMinPauseMs);
+  }
+
+  function drawFakeCursor(now) {
+    updateFakeCursor(now);
+    if (!fakeCursor.initialized) return;
+
+    ctx.save();
+    ctx.translate(fakeCursor.x, fakeCursor.y);
+    ctx.rotate(Math.sin(now / 900) * 0.045);
+    ctx.shadowColor = "rgba(63, 199, 235, 0.85)";
+    ctx.shadowBlur = 16;
+    ctx.imageSmoothingEnabled = false;
+    if (fakeCursorSprite.complete && fakeCursorSprite.naturalWidth && fakeCursorSprite.naturalHeight) {
+      ctx.drawImage(fakeCursorSprite, -fakeCursorDrawSize / 2, -fakeCursorDrawSize / 2, fakeCursorDrawSize, fakeCursorDrawSize);
+    } else {
+      drawFakeCursorFallback();
+    }
+    ctx.restore();
+  }
+
+  function drawFakeCursorFallback() {
+    const size = fakeCursorDrawSize;
+    ctx.fillStyle = "rgba(63, 199, 235, 0.92)";
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.85)";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.28, -size * 0.42);
+    ctx.lineTo(size * 0.28, 0);
+    ctx.lineTo(size * 0.02, size * 0.07);
+    ctx.lineTo(size * 0.2, size * 0.42);
+    ctx.lineTo(size * 0.02, size * 0.5);
+    ctx.lineTo(-size * 0.16, size * 0.14);
+    ctx.lineTo(-size * 0.38, size * 0.32);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fill();
   }
 
   function drawCombatLog(now) {
@@ -1579,10 +1727,8 @@
   }
 
   function speakerColor(speaker, alpha) {
-    if (speaker === "biden") return `rgba(170, 211, 114, ${alpha})`;
-    if (speaker === "durgular") return `rgba(198, 155, 109, ${alpha})`;
-    if (speaker === "biotachyonic") return `rgba(255, 124, 10, ${alpha})`;
-    return `rgba(135, 136, 238, ${alpha})`;
+    const color = wowClassColors[String(speaker).toLowerCase()] || wowClassColors.grandma;
+    return `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha})`;
   }
 
   function messageColor(channel, alpha) {
@@ -1614,8 +1760,10 @@
   function draw(now) {
     ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
     maybeAddDurgularYell(now);
+    maybeAddTwitchChatQuip(now);
     advanceSnake(now);
     drawSnake(now);
+    drawFakeCursor(now);
     drawBidens(now);
     drawEnrageMeter(now);
     drawCombatLog(now);

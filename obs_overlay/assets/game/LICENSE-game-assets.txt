@@ -4,6 +4,7 @@ Source directory:
 D:\SteamLibrary\steamapps\common\Cookie Clicker\resources\app\src\img
 
 Bundled overlay assets:
+- cursor.png: copied from cursor.png
 - frenzy_cookie.png: copied from goldCookie.png
 - grandma_full.png: copied from grandma.png
 - grandma_head.png: cropped from grandma.png

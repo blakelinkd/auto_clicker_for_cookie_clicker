@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-worm-36";
+  const assetVersion = "snake-heat-worm-37";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const fakeCursorSprite = new Image();
@@ -1489,8 +1489,7 @@
 
       return this.restPoints.map((point) => {
         const t = (point.x - this.minBoneX) / length;
-        const facingT = direction >= 0 ? t : 1 - t;
-        const localX = facingT * length * lengthFactor;
+        const localX = t * length * lengthFactor;
         const archShape = Math.sin(t * Math.PI);
         const bodyArch = Math.pow(Math.max(0, archShape), 1.45) * arch;
         const bodyRipple = Math.sin(phase * 1.2 + t * Math.PI * 2) * scale * 0.45;
@@ -1965,10 +1964,10 @@
     const groundY = wormGroundY();
     const scale = wormBaseScale;
     const length = wormSprite.lengthAtScale(scale);
-    const x = wormPatrolMargin + Math.random() * Math.max(1, window.innerWidth - wormPatrolMargin * 2 - length);
     const direction = Math.random() < 0.5 ? -1 : 1;
+    const left = wormPatrolMargin + Math.random() * Math.max(1, window.innerWidth - wormPatrolMargin * 2 - length);
     poopWorms.push({
-      x,
+      x: direction >= 0 ? left : left + length,
       baselineY: wormSprite.groundBaselineY(groundY, scale),
       scale,
       direction,
@@ -2025,13 +2024,13 @@
   function patrolWorm(worm, dt) {
     worm.direction = worm.patrolDirection || worm.direction || 1;
     worm.x += worm.direction * wormCrawlSpeed * worm.scale * dt * 0.62;
-    const length = wormSprite.lengthAtScale(worm.scale);
-    if (worm.x < wormPatrolMargin) {
-      worm.x = wormPatrolMargin;
+    const bounds = wormDrawBounds(worm);
+    if (bounds.minX < wormPatrolMargin) {
+      worm.x += wormPatrolMargin - bounds.minX;
       worm.patrolDirection = 1;
       worm.direction = 1;
-    } else if (worm.x + length > window.innerWidth - wormPatrolMargin) {
-      worm.x = window.innerWidth - wormPatrolMargin - length;
+    } else if (bounds.maxX > window.innerWidth - wormPatrolMargin) {
+      worm.x -= bounds.maxX - (window.innerWidth - wormPatrolMargin);
       worm.patrolDirection = -1;
       worm.direction = -1;
     }
@@ -2042,6 +2041,7 @@
     let bestDistance = Infinity;
     const mouth = wormSprite.mouthPoint(wormPose(worm));
     for (const poop of grandmaPoops) {
+      if (poop.beingEaten) continue;
       if (poop.eatScale != null && poop.eatScale <= 0.05) continue;
       const poopRadius = poopCurrentSize(poop, now) * 0.18;
       const verticalReach = Math.abs(wormGroundY() - poop.y) - poopRadius;
@@ -2056,6 +2056,13 @@
   }
 
   function startWormEating(worm, poop, now) {
+    if (poop.beingEaten) return;
+    poop.beingEaten = true;
+    poop.asleep = true;
+    poop.vx = 0;
+    poop.vy = 0;
+    poop.angularVelocity = 0;
+    poop.floorContactSince = now;
     worm.eatingPoop = poop;
     worm.targetPoop = poop;
     worm.eatStartedAt = now;
@@ -2092,10 +2099,13 @@
 
   function anchorWormToGround(worm) {
     worm.baselineY = wormSprite.groundBaselineY(wormGroundY(), worm.scale);
-    const pose = wormPose(worm);
-    const bounds = wormSprite.poseDrawBounds(pose, worm.scale);
+    const bounds = wormDrawBounds(worm);
     if (!Number.isFinite(bounds.maxY)) return;
     worm.baselineY += wormGroundY() - bounds.maxY;
+  }
+
+  function wormDrawBounds(worm) {
+    return wormSprite.poseDrawBounds(wormPose(worm), worm.scale);
   }
 
   function wormPose(worm) {

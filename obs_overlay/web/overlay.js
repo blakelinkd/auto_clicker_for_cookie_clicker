@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-worm-37";
+  const assetVersion = "snake-heat-worm-39";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const fakeCursorSprite = new Image();
@@ -403,6 +403,10 @@
 
   function addSpawn(payload) {
     if (!payload) return;
+    if (payload.type === "reload_overlay") {
+      window.location.reload();
+      return;
+    }
     if (payload.type === "spawn_biden") {
       addBidenSpawn(payload);
       resetBidenTimer(performance.now());
@@ -1754,6 +1758,8 @@
   }
 
   function constrainPoopToViewport(poop, now) {
+    if (poop.beingEaten) return;
+
     const bounds = poopAabb(poop, now);
     if (bounds.minX < 0) {
       poop.x += -bounds.minX;
@@ -1799,6 +1805,7 @@
   }
 
   function maybeSleepPoop(poop, now) {
+    if (poop.beingEaten) return;
     if (!poop.floorContactSince || now - poop.floorContactSince < poopSleepDelayMs) return;
     const linearSpeed = Math.sqrt(poop.vx * poop.vx + poop.vy * poop.vy);
     if (linearSpeed > poopSleepLinearSpeed || Math.abs(poop.angularVelocity) > poopSleepAngularSpeed) return;
@@ -1809,6 +1816,8 @@
   }
 
   function resolvePoopCollision(first, second, now) {
+    if (first.beingEaten || second.beingEaten) return false;
+
     const collision = poopRotatedRectCollision(first, second, now);
     if (!collision) return false;
     first.asleep = false;

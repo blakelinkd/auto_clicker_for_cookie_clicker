@@ -33,6 +33,15 @@ class ServerEventTests(unittest.TestCase):
         self.assertEqual(event, {"version": 1, "type": "play_sound", "sound": "dean"})
         self.assertIsNone(server.validate_spawn_event({"type": "play_sound", "sound": "bad"}))
 
+    def test_validate_reload_overlay_event(self):
+        event = server.validate_spawn_event({"type": "reload_overlay"})
+
+        self.assertEqual(event, {
+            "version": 1,
+            "type": "reload_overlay",
+            "source": "overlay_server",
+        })
+
     def test_validate_hud_message_event(self):
         event = server.validate_spawn_event(
             {

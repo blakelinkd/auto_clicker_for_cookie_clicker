@@ -187,8 +187,23 @@ def _validate_hud_message_event(payload: dict[str, Any]) -> dict[str, Any] | Non
 
 
 def validate_spawn_event(payload: Any) -> dict[str, Any] | None:
-    if not isinstance(payload, dict) or payload.get("type") not in {"spawn_biden", "spawn_fruit", "spawn_worm", "play_sound", "hud_message", "hud_message_delete", "biden_timer"}:
+    if not isinstance(payload, dict) or payload.get("type") not in {
+        "spawn_biden",
+        "spawn_fruit",
+        "spawn_worm",
+        "play_sound",
+        "hud_message",
+        "hud_message_delete",
+        "biden_timer",
+        "reload_overlay",
+    }:
         return None
+    if payload.get("type") == "reload_overlay":
+        return {
+            "version": 1,
+            "type": "reload_overlay",
+            "source": str(payload.get("source") or "overlay_server"),
+        }
     if payload.get("type") == "spawn_worm":
         return {
             "version": 1,
@@ -351,6 +366,9 @@ class OverlayRequestHandler(BaseHTTPRequestHandler):
         if path == "/events":
             self._serve_events()
             return
+        if path == "/reload":
+            self._serve_reload_overlay()
+            return
         if path.startswith("/test-sound/"):
             self._serve_test_sound(path.rsplit("/", 1)[-1])
             return
@@ -386,7 +404,11 @@ class OverlayRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib API
-        if urlparse(self.path).path != "/event":
+        path = urlparse(self.path).path
+        if path == "/reload":
+            self._serve_reload_overlay()
+            return
+        if path != "/event":
             self.send_error(404)
             return
         try:
@@ -405,6 +427,20 @@ class OverlayRequestHandler(BaseHTTPRequestHandler):
         broadcast_event(event)
         self.send_response(204)
         self.end_headers()
+
+    def _serve_reload_overlay(self) -> None:
+        event = validate_spawn_event({"type": "reload_overlay"})
+        if event is None:
+            self.send_error(500)
+            return
+        broadcast_event(event)
+        data = b"queued overlay reload\n"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
 
     def _send_file(self, path: Path, content_type: str | None = None) -> None:
         if not path.is_file():

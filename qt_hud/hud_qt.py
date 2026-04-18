@@ -399,6 +399,7 @@ class QtDashboard(QMainWindow):
         send_overlay_message=None,
         delete_overlay_message=None,
         send_biden_timer=None,
+        send_voice_message=None,
     ):
         super().__init__()
         self.get_dashboard_state = get_dashboard_state
@@ -425,6 +426,7 @@ class QtDashboard(QMainWindow):
         self.send_overlay_message = send_overlay_message or (lambda *args, **kwargs: None)
         self.delete_overlay_message = delete_overlay_message or (lambda *args, **kwargs: None)
         self.send_biden_timer = send_biden_timer or (lambda *args, **kwargs: None)
+        self.send_voice_message = send_voice_message or (lambda *args, **kwargs: None)
         self.refresh_interval_ms = int(refresh_interval_ms)
         self._overlay_tz = self._resolve_overlay_timezone()
         self._overlay_card_counter = 0
@@ -1116,7 +1118,6 @@ class QtDashboard(QMainWindow):
 
         self.overlay_message_input = QLineEdit()
         self.overlay_message_input.setPlaceholderText("Type a message for the OBS overlay...")
-        self.overlay_message_input.setMaxLength(500)
         self.overlay_message_input.setStyleSheet(theme.line_edit_style())
         self.overlay_message_input.returnPressed.connect(self._submit_overlay_message)
 
@@ -1128,6 +1129,9 @@ class QtDashboard(QMainWindow):
         self.overlay_repeat_input.setPlaceholderText("optional")
         self.overlay_repeat_input.setStyleSheet(theme.line_edit_style())
 
+        self.overlay_voice_checkbox = QCheckBox("Voice")
+        self.overlay_voice_checkbox.setStyleSheet(theme.text_light_color_style())
+
         self.overlay_submit_btn = QPushButton("Submit")
         self.overlay_submit_btn.setStyleSheet(theme.button_style("primary"))
         self.overlay_submit_btn.clicked.connect(self._submit_overlay_message)
@@ -1138,11 +1142,12 @@ class QtDashboard(QMainWindow):
         form_layout.addWidget(self.overlay_ttl_input, 1, 1)
         form_layout.addWidget(QLabel("Repeat minutes"), 1, 2)
         form_layout.addWidget(self.overlay_repeat_input, 1, 3)
+        form_layout.addWidget(self.overlay_voice_checkbox, 2, 2)
         form_layout.addWidget(self.overlay_submit_btn, 2, 3)
 
         self.overlay_status_label = QLabel("Blank TTL uses the 4 second default. Blank repeat sends once.")
         self.overlay_status_label.setStyleSheet(theme.secondary_label_style())
-        form_layout.addWidget(self.overlay_status_label, 2, 0, 1, 3)
+        form_layout.addWidget(self.overlay_status_label, 2, 0, 1, 2)
 
         layout.addWidget(form_panel)
 
@@ -1183,6 +1188,7 @@ class QtDashboard(QMainWindow):
 
         submitted_at = time.time()
         event_id = self._next_overlay_event_id(submitted_at)
+        voice_enabled = self.overlay_voice_checkbox.isChecked()
         self.send_overlay_message(
             message,
             ttl_minutes=ttl_minutes,
@@ -1190,16 +1196,20 @@ class QtDashboard(QMainWindow):
             submitted_at=submitted_at,
             event_id=event_id,
         )
+        if voice_enabled:
+            self.send_voice_message(message, submitted_at=submitted_at, event_id=event_id)
         self._add_overlay_message_card(
             event_id=event_id,
             message=message,
             ttl_minutes=ttl_minutes,
             repeat_minutes=repeat_minutes,
             created_at=submitted_at,
+            voice_enabled=voice_enabled,
         )
         self._save_overlay_messages_to_config()
         self.overlay_message_input.clear()
-        self._set_overlay_status("Message sent to OBS overlay.", error=False)
+        status = "Message sent to OBS overlay and voice server." if voice_enabled else "Message sent to OBS overlay."
+        self._set_overlay_status(status, error=False)
 
     def _parse_optional_positive_minutes(self, raw_value, label):
         value = str(raw_value or "").strip()
@@ -1222,12 +1232,13 @@ class QtDashboard(QMainWindow):
         self._overlay_card_counter += 1
         return f"hud:{int(timestamp * 1000)}:{self._overlay_card_counter}"
 
-    def _add_overlay_message_card(self, *, event_id, message, ttl_minutes, repeat_minutes, created_at):
+    def _add_overlay_message_card(self, *, event_id, message, ttl_minutes, repeat_minutes, created_at, voice_enabled=False):
         if event_id in self._overlay_message_cards:
             card = self._overlay_message_cards[event_id]
             card["message"] = message
             card["ttl_input"].setText(self._format_optional_minutes(ttl_minutes))
             card["repeat_input"].setText(self._format_optional_minutes(repeat_minutes))
+            card["voice_checkbox"].setChecked(bool(voice_enabled))
             return
 
         card_widget = QFrame()
@@ -1257,10 +1268,15 @@ class QtDashboard(QMainWindow):
         repeat_input.setMaximumWidth(90)
         repeat_input.setStyleSheet(theme.line_edit_style())
 
+        voice_checkbox = QCheckBox("Voice")
+        voice_checkbox.setChecked(bool(voice_enabled))
+        voice_checkbox.setStyleSheet(theme.text_light_color_style())
+
         card_layout.addWidget(QLabel("TTL"))
         card_layout.addWidget(ttl_input)
         card_layout.addWidget(QLabel("Repeat"))
         card_layout.addWidget(repeat_input)
+        card_layout.addWidget(voice_checkbox)
 
         delete_btn = QPushButton("Delete")
         delete_btn.setStyleSheet(theme.button_style("secondary"))
@@ -1274,9 +1290,11 @@ class QtDashboard(QMainWindow):
             "widget": card_widget,
             "ttl_input": ttl_input,
             "repeat_input": repeat_input,
+            "voice_checkbox": voice_checkbox,
         }
         ttl_input.editingFinished.connect(lambda event_id=event_id: self._overlay_card_settings_changed(event_id))
         repeat_input.editingFinished.connect(lambda event_id=event_id: self._overlay_card_settings_changed(event_id))
+        voice_checkbox.stateChanged.connect(lambda _state, event_id=event_id: self._overlay_card_settings_changed(event_id))
         delete_btn.clicked.connect(lambda _checked=False, event_id=event_id: self._delete_overlay_message_card(event_id))
 
     def _overlay_card_settings_changed(self, event_id):
@@ -1296,6 +1314,8 @@ class QtDashboard(QMainWindow):
             submitted_at=time.time(),
             event_id=event_id,
         )
+        if card["voice_checkbox"].isChecked():
+            self.send_voice_message(card["message"], submitted_at=time.time(), event_id=event_id)
         self._save_overlay_messages_to_config()
         self._set_overlay_status("Overlay message settings updated.", error=False)
 
@@ -1326,6 +1346,7 @@ class QtDashboard(QMainWindow):
                 "ttl_minutes": ttl_minutes,
                 "repeat_interval_minutes": repeat_minutes,
                 "created_at": card["created_at"],
+                "voice_enabled": card["voice_checkbox"].isChecked(),
             })
         return messages
 
@@ -1360,20 +1381,24 @@ class QtDashboard(QMainWindow):
             event_id = str(message.get("event_id") or self._next_overlay_event_id(created_at))
             ttl_minutes = self._safe_optional_float(message.get("ttl_minutes"))
             repeat_minutes = self._safe_optional_float(message.get("repeat_interval_minutes"))
+            voice_enabled = bool(message.get("voice_enabled"))
             self._add_overlay_message_card(
                 event_id=event_id,
-                message=text[:500],
+                message=text,
                 ttl_minutes=ttl_minutes,
                 repeat_minutes=repeat_minutes,
                 created_at=created_at,
+                voice_enabled=voice_enabled,
             )
             self.send_overlay_message(
-                text[:500],
+                text,
                 ttl_minutes=ttl_minutes,
                 repeat_interval_minutes=repeat_minutes,
                 submitted_at=time.time(),
                 event_id=event_id,
             )
+            if voice_enabled:
+                self.send_voice_message(text, submitted_at=time.time(), event_id=event_id)
 
     def _safe_optional_float(self, value):
         if value is None or value == "":

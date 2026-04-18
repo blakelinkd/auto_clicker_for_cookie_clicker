@@ -37,6 +37,7 @@ class DashboardCallbacks:
     send_overlay_message: Optional[Any] = field(default=None)
     delete_overlay_message: Optional[Any] = field(default=None)
     send_biden_timer: Optional[Any] = field(default=None)
+    send_voice_message: Optional[Any] = field(default=None)
 
 
 def build_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refresh_interval_ms: int, use_qt_hud: bool = True):
@@ -112,4 +113,5 @@ def build_qt_dashboard(*, callbacks: DashboardCallbacks, initial_geometry, refre
         send_overlay_message=callbacks.send_overlay_message,
         delete_overlay_message=callbacks.delete_overlay_message,
         send_biden_timer=callbacks.send_biden_timer,
+        send_voice_message=callbacks.send_voice_message,
     )

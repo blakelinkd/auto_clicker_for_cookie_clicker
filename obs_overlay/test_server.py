@@ -218,16 +218,17 @@ class ServerEventTests(unittest.TestCase):
         manifest = server.ensure_worm_aseprite_exports()
 
         self.assertIsNotNone(manifest)
-        self.assertEqual(manifest["width"], 128)
-        self.assertEqual(manifest["height"], 128)
+        self.assertLess(manifest["width"], 128)
+        self.assertLess(manifest["height"], 128)
         self.assertIn("worm", manifest["layers"])
         self.assertIn("bones", manifest["layers"])
         for name in ("worm", "bones"):
             path = Path("obs_overlay") / manifest["layers"][name].lstrip("/")
+            self.assertIn("assets/generated/sprites", path.as_posix())
             self.assertTrue(path.is_file(), name)
             image = Image.open(path)
             self.assertEqual(image.mode, "RGBA")
-            self.assertEqual(image.size, (128, 128))
+            self.assertEqual(image.size, (manifest["width"], manifest["height"]))
 
 
 if __name__ == "__main__":

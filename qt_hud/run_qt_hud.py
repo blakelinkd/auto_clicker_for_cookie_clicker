@@ -139,6 +139,9 @@ class JsonMockCallbacks:
     def send_biden_timer(self, golden_diag):
         print(f"Biden timer: {golden_diag}")
 
+    def send_voice_message(self, text, *, submitted_at=None, event_id=None):
+        print(f"Voice message: text={text!r} submitted_at={submitted_at!r} event_id={event_id!r}")
+
     def get_config(self):
         return {
             "game_install_dir": "C:/Steam/...",
@@ -178,6 +181,7 @@ def main():
         send_overlay_message=callbacks.send_overlay_message,
         delete_overlay_message=callbacks.delete_overlay_message,
         send_biden_timer=callbacks.send_biden_timer,
+        send_voice_message=callbacks.send_voice_message,
         initial_geometry="800x600",
         refresh_interval_ms=1000,
     )

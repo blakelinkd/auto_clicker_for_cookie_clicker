@@ -28,6 +28,7 @@ class DashboardFactoryTests(unittest.TestCase):
             send_overlay_message=lambda *args, **kwargs: None,
             delete_overlay_message=lambda *args, **kwargs: None,
             send_biden_timer=lambda *args, **kwargs: None,
+            send_voice_message=lambda *args, **kwargs: None,
         )
 
         # Since we prefer Qt when available, patch QtDashboard
@@ -44,5 +45,6 @@ class DashboardFactoryTests(unittest.TestCase):
         self.assertIs(kwargs["send_overlay_message"], callbacks.send_overlay_message)
         self.assertIs(kwargs["delete_overlay_message"], callbacks.delete_overlay_message)
         self.assertIs(kwargs["send_biden_timer"], callbacks.send_biden_timer)
+        self.assertIs(kwargs["send_voice_message"], callbacks.send_voice_message)
         self.assertEqual(kwargs["initial_geometry"], "800x600")
         self.assertEqual(kwargs["refresh_interval_ms"], 500)

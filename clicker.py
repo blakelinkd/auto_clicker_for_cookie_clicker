@@ -27,6 +27,7 @@ from clicker_bot.events import BotEventRecorder
 from clicker_bot.lifecycle import BotLifecycle, BotLifecycleState
 from clicker_bot.minigame_access import plan_minigame_store_access
 from clicker_bot.overlay_events import OverlayEventEmitter
+from clicker_bot.voice_events import VoiceEventEmitter
 from clicker_bot.dragon_diagnostics import build_dragon_diag
 from clicker_bot.reserve_policy import ReservePolicy, apply_building_burst_purchase_goal
 from clicker_bot.pause_policy import (
@@ -397,6 +398,10 @@ garden_controller = GardenController(log, mode=APP_CONFIG.garden_mode)
 santa_controller = SantaController(log)
 overlay_event_emitter = OverlayEventEmitter(
     enabled=os.environ.get("COOKIE_BIDEN_OVERLAY_DISABLED") != "1",
+    log=log,
+)
+voice_event_emitter = VoiceEventEmitter(
+    enabled=os.environ.get("COOKIE_TTS_DISABLED") != "1",
     log=log,
 )
 _last_lucky_multiplier = 1.0
@@ -1688,6 +1693,7 @@ def start_dashboard(use_qt_hud: bool = True):
         send_overlay_message=overlay_event_emitter.send_hud_message,
         delete_overlay_message=overlay_event_emitter.delete_hud_message,
         send_biden_timer=overlay_event_emitter.send_biden_timer,
+        send_voice_message=voice_event_emitter.send_message,
     )
     return build_dashboard(
         callbacks=callbacks,

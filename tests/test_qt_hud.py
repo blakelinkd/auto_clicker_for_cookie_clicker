@@ -163,6 +163,7 @@ def _create_test_window(
     send_overlay_message=None,
     delete_overlay_message=None,
     send_biden_timer=None,
+    send_voice_message=None,
     get_config=None,
     save_config=None,
 ):
@@ -193,6 +194,7 @@ def _create_test_window(
         send_overlay_message=send_overlay_message,
         delete_overlay_message=delete_overlay_message,
         send_biden_timer=send_biden_timer,
+        send_voice_message=send_voice_message,
         initial_geometry=None,
         refresh_interval_ms=500,
     )
@@ -480,6 +482,7 @@ def test_qt_dashboard_has_overlay_tab_at_bottom(qtbot):
     assert hasattr(window, 'overlay_message_input')
     assert hasattr(window, 'overlay_ttl_input')
     assert hasattr(window, 'overlay_repeat_input')
+    assert hasattr(window, 'overlay_voice_checkbox')
     assert hasattr(window, 'overlay_cards_scroll')
     assert hasattr(window, 'overlay_cards_layout')
 
@@ -509,6 +512,30 @@ def test_qt_dashboard_overlay_submit_sends_message_and_adds_card(qtbot):
     assert card["message"] == "Hello OBS"
     assert card["ttl_input"].text() == "2"
     assert card["repeat_input"].text() == "5"
+    assert card["voice_checkbox"].isChecked() is False
+
+
+@pytest.mark.qt
+def test_qt_dashboard_overlay_voice_toggle_sends_voice_message(qtbot):
+    """Submitting with Voice checked sends the message to the voice callback and persists the card flag."""
+    sent = []
+    spoken = []
+    window = _create_test_window(
+        qtbot,
+        send_overlay_message=lambda *args, **kwargs: sent.append((args, kwargs)),
+        send_voice_message=lambda *args, **kwargs: spoken.append((args, kwargs)),
+    )
+
+    window.overlay_message_input.setText("Read this")
+    window.overlay_voice_checkbox.setChecked(True)
+    window._submit_overlay_message()
+
+    assert len(sent) == 1
+    assert len(spoken) == 1
+    assert spoken[0][0] == ("Read this",)
+    event_id = sent[0][1]["event_id"]
+    assert spoken[0][1]["event_id"] == event_id
+    assert window._overlay_message_cards[event_id]["voice_checkbox"].isChecked() is True
 
 
 @pytest.mark.qt
@@ -566,6 +593,7 @@ def test_qt_dashboard_overlay_cards_persist_and_restore(qtbot):
     assert config["overlay_messages"][0]["text"] == "Persistent"
     assert config["overlay_messages"][0]["ttl_minutes"] == 7.0
     assert config["overlay_messages"][0]["repeat_interval_minutes"] == 9.0
+    assert config["overlay_messages"][0]["voice_enabled"] is False
 
     restored = _create_test_window(
         qtbot,

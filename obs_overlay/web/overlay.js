@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-worm-41";
+  const assetVersion = "snake-heat-worm-43";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const fakeCursorSprite = new Image();
@@ -14,7 +14,8 @@
     grandma: createAudioPool(`/assets/audio/grandma_cookie.mp3?v=${assetVersion}`, 0.45, 4),
     poop: createAudioPool(`/assets/audio/farting_sound.mp3?v=${assetVersion}`, 0.55, 8),
     chomp: createAudioPool(`/assets/audio/chomp_sound_effect.mp3?v=${assetVersion}`, 0.48, 6),
-    fly: createAudioPool(`/assets/audio/fly_buzz.mp3?v=${assetVersion}`, 0.35, 1, true),
+    // Disabled until fly_buzz.mp3 is replaced; the current file is the same scream as grandma_cookie.mp3.
+    fly: null,
   };
   let flySoundActive = false;
   const bidenSpawns = [];
@@ -74,6 +75,7 @@
   const wormHeadShakeSize = 3.5;
   const wormGrowthMultiplier = 1.12;
   const wormMaxScale = 1.42;
+  const wormPoopsToFly = 3;
   const wormRigScale = wormBaseScale;
   const wormDissolveDurationMs = 5000;
   const maxWorms = 6;
@@ -213,6 +215,14 @@
       }
     } catch (error) {
       console.warn("Overlay audio playback was blocked or failed.", error);
+    }
+  }
+
+  function stopSound(pool) {
+    if (!pool || !pool.clips) return;
+    for (const clip of pool.clips) {
+      clip.pause();
+      clip.currentTime = 0;
     }
   }
 
@@ -2027,6 +2037,7 @@
       eatStartedAt: 0,
       nextCrunchAt: 0,
       eatingDirection: direction,
+      eatenPoops: 0,
     });
     return true;
   }
@@ -2035,6 +2046,7 @@
     if (!wormSprite || !wormSprite.ready) return;
     spawnPendingPoopWorms(now);
     for (const worm of poopWorms) {
+      if (worm.dissolving) continue;
       const dt = Math.min(100, Math.max(0, now - (worm.lastFrameAt || now))) / 1000;
       worm.lastFrameAt = now;
       worm.phase += dt * (worm.eatingPoop ? 11.5 : 8.5);
@@ -2152,12 +2164,16 @@
 
     const index = grandmaPoops.indexOf(poop);
     if (index >= 0) grandmaPoops.splice(index, 1);
+    worm.eatenPoops = (worm.eatenPoops || 0) + 1;
     worm.scale = Math.min(wormMaxScale, worm.scale * wormGrowthMultiplier);
     anchorWormToGround(worm, now);
     worm.eatingPoop = null;
     worm.targetPoop = null;
     worm.eatStartedAt = 0;
     worm.patrolDirection = worm.direction;
+    if (worm.eatenPoops >= wormPoopsToFly) {
+      beginWormDissolving(worm, now);
+    }
   }
 
   function wormGroundY() {
@@ -2213,10 +2229,17 @@
     const activeWorms = poopWorms.filter((w) => !w.dissolving);
     if (activeWorms.length <= maxWorms) return;
     const oldestWorm = activeWorms[0];
-    if (oldestWorm.dissolveStartedAt) return;
-    oldestWorm.dissolving = true;
-    oldestWorm.dissolveStartedAt = now;
-    oldestWorm.dissolveProgress = 0;
+    beginWormDissolving(oldestWorm, now);
+  }
+
+  function beginWormDissolving(worm, now) {
+    if (worm.dissolving) return;
+    worm.dissolving = true;
+    worm.dissolveStartedAt = now;
+    worm.dissolveProgress = 0;
+    worm.dissolveScale = 1;
+    worm.eatingPoop = null;
+    worm.targetPoop = null;
   }
 
   function updateWormDissolving(now) {
@@ -2226,14 +2249,15 @@
       worm.dissolveProgress = Math.min(1, (now - worm.dissolveStartedAt) / wormDissolveDurationMs);
       worm.dissolveScale = 1 - worm.dissolveProgress;
       if (worm.dissolveProgress >= 1) {
-        poopWorms.splice(i, 1);
-        spawnFlyAtWormLocation(worm, now);
+        if (spawnFlyAtWormLocation(worm, now)) {
+          poopWorms.splice(i, 1);
+        }
       }
     }
   }
 
   function spawnFlyAtWormLocation(worm, now) {
-    if (!flySprite || !flySprite.ready || !flyManifest) return;
+    if (!flySprite || !flySprite.ready || !flyManifest) return false;
     const x = worm.x || window.innerWidth / 2;
     const y = (worm.baselineY || window.innerHeight - 50) - 30;
     flies.push({
@@ -2250,6 +2274,7 @@
       frameTime: 0,
       growProgress: 0,
     });
+    return true;
   }
 
   function advanceFlies(now) {
@@ -2258,11 +2283,9 @@
     const hasFlyingFlies = flies.some((f) => f.state === "flying");
     if (hasFlyingFlies && !flySoundActive) {
       playSound(sounds.fly, true);
-      flySoundActive = true;
+      flySoundActive = Boolean(sounds.fly);
     } else if (!hasFlyingFlies && flySoundActive) {
-      for (const clip of sounds.fly.clips) {
-        clip.pause();
-      }
+      stopSound(sounds.fly);
       flySoundActive = false;
     }
     for (const fly of flies) {
@@ -3166,7 +3189,7 @@
   resetSnake();
   window.addEventListener("resize", resizeCanvas);
   wormSprite = new AsepriteBoneSprite("", {
-    manifestUrl: "/assets/sprites/worm_with_bones.layers.json",
+    manifestUrl: "/assets/generated/sprites/worm_with_bones.layers.json",
     imageLayerName: "worm",
     bonesLayerName: "bones",
     sliceCount: 64,
@@ -3176,7 +3199,7 @@
     wormSprite = null;
   });
 
-  fetch("/assets/sprites/fly_flying.json")
+  fetch("/assets/generated/sprites/fly_flying.json")
     .then((res) => res.json())
     .then((manifest) => {
       flyManifest = manifest;

@@ -22,6 +22,8 @@ from urllib.parse import urlparse
 BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
 SPRITES_DIR = ASSETS_DIR / "sprites"
+GENERATED_ASSETS_DIR = ASSETS_DIR / "generated"
+GENERATED_SPRITES_DIR = GENERATED_ASSETS_DIR / "sprites"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 47651
 CLIENTS: set[queue.Queue[str]] = set()
@@ -39,36 +41,46 @@ OVERLAY_RELOAD_DEBOUNCE_SECONDS = 0.7
 
 
 def ensure_worm_aseprite_exports() -> dict[str, Any] | None:
-    """Export the worm/bones Aseprite layers into browser-ready PNG assets."""
+    """Export cropped worm/bones Aseprite layers into generated browser-ready PNG assets."""
     source = SPRITES_DIR / "worm_with_bones.ase"
     if not source.is_file():
         return None
     return export_aseprite_layers(
         source,
         {
-            "worm": SPRITES_DIR / "worm_with_bones_worm.png",
-            "bones": SPRITES_DIR / "worm_with_bones_bones.png",
+            "worm": GENERATED_SPRITES_DIR / "worm_with_bones_worm.png",
+            "bones": GENERATED_SPRITES_DIR / "worm_with_bones_bones.png",
         },
-        SPRITES_DIR / "worm_with_bones.layers.json",
+        GENERATED_SPRITES_DIR / "worm_with_bones.layers.json",
+        trim_transparent_bounds=True,
     )
 
 
 def ensure_fly_aseprite_exports() -> dict[str, Any] | None:
-    """Export the fly animation into browser-ready sprite sheet."""
+    """Export the cropped fly animation into a generated browser-ready sprite sheet."""
     source = SPRITES_DIR / "fly_flying.ase"
     if not source.is_file():
         return None
     return export_aseprite_animation(
         source,
-        SPRITES_DIR / "fly_flying.png",
-        SPRITES_DIR / "fly_flying.json",
+        GENERATED_SPRITES_DIR / "fly_flying.png",
+        GENERATED_SPRITES_DIR / "fly_flying.json",
+        trim_transparent_bounds=True,
     )
+
+
+def ensure_overlay_asset_exports() -> None:
+    """Build generated overlay assets while keeping original assets unchanged."""
+    ensure_worm_aseprite_exports()
+    ensure_fly_aseprite_exports()
 
 
 def export_aseprite_animation(
     source: Path,
     spritesheet_output: Path,
     manifest_path: Path,
+    *,
+    trim_transparent_bounds: bool = False,
 ) -> dict[str, Any]:
     from PIL import Image
 
@@ -101,10 +113,19 @@ def export_aseprite_animation(
         frame_images.append(frame_canvas)
         offset += frame_bytes
 
-    sheet_width = width * frames
-    spritesheet = Image.new("RGBA", (sheet_width, height), (0, 0, 0, 0))
+    output_width = width
+    output_height = height
+    if trim_transparent_bounds:
+        crop_bounds = union_alpha_bounds(frame_images)
+        if crop_bounds is not None:
+            frame_images = [frame.crop(crop_bounds) for frame in frame_images]
+            output_width = crop_bounds[2] - crop_bounds[0]
+            output_height = crop_bounds[3] - crop_bounds[1]
+
+    sheet_width = output_width * frames
+    spritesheet = Image.new("RGBA", (sheet_width, output_height), (0, 0, 0, 0))
     for i, frame_img in enumerate(frame_images):
-        spritesheet.paste(frame_img, (i * width, 0))
+        spritesheet.paste(frame_img, (i * output_width, 0))
 
     spritesheet_output.parent.mkdir(parents=True, exist_ok=True)
     spritesheet.save(spritesheet_output)
@@ -112,8 +133,8 @@ def export_aseprite_animation(
     manifest = {
         "version": 1,
         "source": "/" + source.relative_to(BASE_DIR).as_posix(),
-        "width": width,
-        "height": height,
+        "width": output_width,
+        "height": output_height,
         "frameCount": frames,
         "spritesheet": "/" + spritesheet_output.relative_to(BASE_DIR).as_posix(),
     }
@@ -155,6 +176,8 @@ def export_aseprite_layers(
     source: Path,
     layer_outputs: dict[str, Path],
     manifest_path: Path,
+    *,
+    trim_transparent_bounds: bool = False,
 ) -> dict[str, Any]:
     from PIL import Image
 
@@ -189,6 +212,15 @@ def export_aseprite_layers(
             chunk_offset += chunk_size
         offset += frame_bytes
 
+    output_width = width
+    output_height = height
+    if trim_transparent_bounds:
+        crop_bounds = union_alpha_bounds(images.values())
+        if crop_bounds is not None:
+            images = {name: image.crop(crop_bounds) for name, image in images.items()}
+            output_width = crop_bounds[2] - crop_bounds[0]
+            output_height = crop_bounds[3] - crop_bounds[1]
+
     exported_layers: dict[str, str] = {}
     for layer_name, image in images.items():
         output_path = layer_outputs[layer_name]
@@ -199,8 +231,8 @@ def export_aseprite_layers(
     manifest = {
         "version": 1,
         "source": "/" + source.relative_to(BASE_DIR).as_posix(),
-        "width": width,
-        "height": height,
+        "width": output_width,
+        "height": output_height,
         "layers": exported_layers,
     }
     manifest_path.write_text(json.dumps(manifest, separators=(",", ":")) + "\n", encoding="utf-8")
@@ -244,6 +276,30 @@ def _extract_aseprite_cel(
         alpha = cel_image.getchannel("A").point(lambda value: int(value * (cel_opacity / 255)))
         cel_image.putalpha(alpha)
     layer_image.alpha_composite(cel_image, (x, y))
+
+
+def union_alpha_bounds(images: Any) -> tuple[int, int, int, int] | None:
+    bounds: tuple[int, int, int, int] | None = None
+    for image in images:
+        image_bounds = transparent_alpha_bounds(image)
+        if image_bounds is None:
+            continue
+        if bounds is None:
+            bounds = image_bounds
+            continue
+        bounds = (
+            min(bounds[0], image_bounds[0]),
+            min(bounds[1], image_bounds[1]),
+            max(bounds[2], image_bounds[2]),
+            max(bounds[3], image_bounds[3]),
+        )
+    return bounds
+
+
+def transparent_alpha_bounds(image: Any) -> tuple[int, int, int, int] | None:
+    if image.mode != "RGBA":
+        image = image.convert("RGBA")
+    return image.getchannel("A").getbbox()
 
 
 def clamp01(value: Any) -> float:
@@ -686,8 +742,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    ensure_worm_aseprite_exports()
-    ensure_fly_aseprite_exports()
+    ensure_overlay_asset_exports()
     stop_event = threading.Event()
     udp_thread = threading.Thread(
         target=udp_listener,

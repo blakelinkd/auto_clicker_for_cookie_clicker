@@ -44,6 +44,11 @@ assigned to the stream/recording track you use, usually Track 1. Use
 The server listens for bot UDP events on `127.0.0.1:47651` and serves the OBS
 Browser Source at `http://127.0.0.1:47651/`.
 
+On startup, the server exports cropped runtime sprites under
+`assets/generated/` from the original source assets in `assets/sprites/`.
+The generated files are ignored by git; delete that directory if you want the
+server to rebuild the cropped overlay assets from scratch.
+
 Snake mode is enabled by default. Each shimmer click spawns a golden-cookie
 target for the self-playing grandma-head snake while still showing the Biden
 pointer animation. The Browser Source also spawns a random target immediately

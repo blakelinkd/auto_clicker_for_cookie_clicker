@@ -14,7 +14,9 @@
     grandma: createAudioPool(`/assets/audio/grandma_cookie.mp3?v=${assetVersion}`, 0.45, 4),
     poop: createAudioPool(`/assets/audio/farting_sound.mp3?v=${assetVersion}`, 0.55, 8),
     chomp: createAudioPool(`/assets/audio/chomp_sound_effect.mp3?v=${assetVersion}`, 0.48, 6),
+    fly: createAudioPool(`/assets/audio/fly_buzz.mp3?v=${assetVersion}`, 0.35, 1, true),
   };
+  let flySoundActive = false;
   const bidenSpawns = [];
   const bidenSpawnByShimmerId = new Map();
 
@@ -73,6 +75,17 @@
   const wormGrowthMultiplier = 1.12;
   const wormMaxScale = 1.42;
   const wormRigScale = wormBaseScale;
+  const wormDissolveDurationMs = 5000;
+  const maxWorms = 6;
+  const flySpriteScale = 1.08;
+  const flyStartScale = 0.125;
+  const flyGrowDurationMs = 300000;
+  const flyMinPauseMs = 1500;
+  const flyMaxPauseMs = 4000;
+  const flyMinFlightMs = 2000;
+  const flyMaxFlightMs = 5000;
+  const flySpeed = 180;
+  const flyPatrolMargin = 40;
   const twitchChatQuipIntervalMs = 180000;
   const defaultHudMessageTtlMs = 4000;
   const snake = {
@@ -127,6 +140,9 @@
   let pendingPoopWormSpawns = 0;
   let bidenSpawnCount = 0;
   let wormSprite = null;
+  let flySprite = null;
+  let flyManifest = null;
+  const flies = [];
   const biotachyonicWhisper = "it's supposed to look like biden is popping the cookies...";
   const twitchChatQuip = "Feel free to point out any bugs, make suggestions or request in the twitch chat!";
   const bidenFocusLines = [
@@ -164,7 +180,7 @@
   fakeCursorSprite.src = `/assets/game/cursor.png?v=${assetVersion}`;
   poopSprite.src = `/assets/sprites/poop.png?v=${assetVersion}`;
 
-  function createAudioPool(src, volume, count) {
+  function createAudioPool(src, volume, count, loop = false) {
     const clips = [];
     for (let i = 0; i < count; i += 1) {
       const audio = new Audio(src);
@@ -172,6 +188,7 @@
       audio.volume = volume;
       audio.muted = false;
       audio.setAttribute("playsinline", "");
+      audio.loop = loop;
       audio.style.display = "none";
       document.body.appendChild(audio);
       audio.load();
@@ -180,13 +197,14 @@
     return { clips, next: 0 };
   }
 
-  function playSound(pool) {
+  function playSound(pool, loop = false) {
     if (!pool || pool.clips.length === 0) return;
     const audio = pool.clips[pool.next];
     pool.next = (pool.next + 1) % pool.clips.length;
     try {
       audio.pause();
       audio.currentTime = 0;
+      audio.loop = loop;
       const result = audio.play();
       if (result && typeof result.catch === "function") {
         result.catch((error) => {
@@ -786,6 +804,8 @@
     maybeDropGrandmaPoops(now);
     advanceGrandmaPoops(now);
     advancePoopWorms(now);
+    manageWormLimit(now);
+    advanceFlies(now);
   }
 
   function advanceBabyGrandmaSnakes(now) {
@@ -1530,19 +1550,24 @@
         const p0 = pose[i];
         const p1 = pose[i + 1];
         const sourceBoneY = this.restPoints[i].y;
-        const dx = p1.x - p0.x;
-        const dy = p1.y - p0.y;
+        const facingLeft = p1.x < p0.x;
+        const segmentStart = facingLeft ? p1 : p0;
+        const segmentEnd = facingLeft ? p0 : p1;
+        const dx = segmentEnd.x - segmentStart.x;
+        const dy = segmentEnd.y - segmentStart.y;
         const segmentLength = Math.sqrt(dx * dx + dy * dy);
         if (segmentLength < 0.01) continue;
         const sin = dy / segmentLength;
         const cos = dx / segmentLength;
         const localTop = -sourceBoneY * scale;
         const localBottom = (this.opaqueBottomY - sourceBoneY) * scale;
+        const localStart = facingLeft ? -segmentLength : 0;
+        const localEnd = facingLeft ? 0 : segmentLength;
         const corners = [
-          transformLocalPoint(p0, cos, sin, 0, localTop),
-          transformLocalPoint(p0, cos, sin, segmentLength, localTop),
-          transformLocalPoint(p0, cos, sin, 0, localBottom),
-          transformLocalPoint(p0, cos, sin, segmentLength, localBottom),
+          transformSpriteLocalPoint(segmentStart, cos, sin, localStart, localTop, facingLeft),
+          transformSpriteLocalPoint(segmentStart, cos, sin, localEnd, localTop, facingLeft),
+          transformSpriteLocalPoint(segmentStart, cos, sin, localStart, localBottom, facingLeft),
+          transformSpriteLocalPoint(segmentStart, cos, sin, localEnd, localBottom, facingLeft),
         ];
         for (const corner of corners) {
           minX = Math.min(minX, corner.x);
@@ -1574,22 +1599,26 @@
         const overlappedSourceX = Math.max(0, sourceX - sourceOverlap);
         const sourceWidth = Math.min(this.width - overlappedSourceX, Math.max(1, nextSourceX - sourceX + 1 + sourceOverlap * 2));
         const sourceBoneY = this.restPoints[i].y;
-        const dx = p1.x - p0.x;
-        const dy = p1.y - p0.y;
+        const facingLeft = p1.x < p0.x;
+        const segmentStart = facingLeft ? p1 : p0;
+        const segmentEnd = facingLeft ? p0 : p1;
+        const dx = segmentEnd.x - segmentStart.x;
+        const dy = segmentEnd.y - segmentStart.y;
         const segmentLength = Math.sqrt(dx * dx + dy * dy);
         if (segmentLength < 0.01) continue;
         const destOverlap = Math.max(3, scale * 2.5);
 
         ctx.save();
-        ctx.translate(p0.x, p0.y);
+        ctx.translate(segmentStart.x, segmentStart.y);
         ctx.rotate(Math.atan2(dy, dx));
+        if (facingLeft) ctx.scale(-1, 1);
         ctx.drawImage(
           this.imageCanvas,
           overlappedSourceX,
           0,
           sourceWidth,
           this.height,
-          -destOverlap / 2,
+          facingLeft ? -segmentLength - destOverlap / 2 : -destOverlap / 2,
           -sourceBoneY * scale,
           segmentLength + destOverlap,
           this.height * scale,
@@ -1636,6 +1665,10 @@
       x: origin.x + x * cos - y * sin,
       y: origin.y + x * sin + y * cos,
     };
+  }
+
+  function transformSpriteLocalPoint(origin, cos, sin, x, y, mirrored) {
+    return transformLocalPoint(origin, cos, sin, mirrored ? -x : x, y);
   }
 
   function interpolateBoneColumn(columns, x) {
@@ -1784,11 +1817,15 @@
     }
 
     const floorBottom = poopFloorBottom(poop, now);
-    if (floorBottom > window.innerHeight) {
-      poop.y -= floorBottom - window.innerHeight;
-      poop.vy = -Math.abs(poop.vy) * poopRestitution;
-      poop.vx *= poopFriction * 0.72;
-      poop.angularVelocity *= poopFriction * 0.55;
+    const floorOverlap = floorBottom - window.innerHeight;
+    const touchingFloor = floorOverlap >= -0.5;
+    if (touchingFloor) {
+      if (floorOverlap > 0) poop.y -= floorOverlap;
+      if (poop.vy > 0 || floorOverlap > 0) {
+        poop.vy = -Math.abs(poop.vy) * poopRestitution;
+        poop.vx *= poopFriction * 0.72;
+        poop.angularVelocity *= poopFriction * 0.55;
+      }
       if (!poop.floorContactSince) poop.floorContactSince = now;
       if (Math.abs(poop.vy) < poopSleepLinearSpeed * 1.8) poop.vy = 0;
       if (Math.abs(poop.vx) < poopSleepLinearSpeed) poop.vx = 0;
@@ -2000,28 +2037,29 @@
     for (const worm of poopWorms) {
       const dt = Math.min(100, Math.max(0, now - (worm.lastFrameAt || now))) / 1000;
       worm.lastFrameAt = now;
-      anchorWormToGround(worm);
       worm.phase += dt * (worm.eatingPoop ? 11.5 : 8.5);
 
       if (worm.eatingPoop) {
         advanceWormEating(worm, now);
+        anchorWormToGround(worm, now);
         continue;
       }
 
+      anchorWormToGround(worm, now);
       worm.targetPoop = nearestTouchablePoop(worm, now);
       if (!worm.targetPoop) {
-        patrolWorm(worm, dt);
+        patrolWorm(worm, dt, now);
         continue;
       }
 
-      const pose = wormPose(worm);
+      const pose = wormPose(worm, now);
       const mouth = wormSprite.mouthPoint(pose);
       const target = worm.targetPoop;
       worm.direction = target.x >= mouth.x ? 1 : -1;
-      const refreshedPose = wormPose(worm);
+      const refreshedPose = wormPose(worm, now);
       const refreshedMouth = wormSprite.mouthPoint(refreshedPose);
       const horizontalDistanceToTarget = Math.abs(refreshedMouth.x - target.x);
-      const touchDistance = poopCurrentSize(target, now) * 0.18 + 10 * worm.scale;
+      const touchDistance = poopCurrentSize(target, now) * 0.4 + 10 * worm.scale;
       if (horizontalDistanceToTarget <= touchDistance) {
         startWormEating(worm, target, now);
         continue;
@@ -2032,10 +2070,10 @@
     }
   }
 
-  function patrolWorm(worm, dt) {
+  function patrolWorm(worm, dt, now) {
     worm.direction = worm.patrolDirection || worm.direction || 1;
     worm.x += worm.direction * wormCrawlSpeed * worm.scale * dt * 0.62;
-    const bounds = wormDrawBounds(worm);
+    const bounds = wormDrawBounds(worm, now);
     if (bounds.minX < wormPatrolMargin) {
       worm.x += wormPatrolMargin - bounds.minX;
       worm.patrolDirection = 1;
@@ -2050,13 +2088,15 @@
   function nearestTouchablePoop(worm, now) {
     let best = null;
     let bestDistance = Infinity;
-    const mouth = wormSprite.mouthPoint(wormPose(worm));
+    const mouth = wormSprite.mouthPoint(wormPose(worm, now));
     for (const poop of grandmaPoops) {
       if (poop.beingEaten) continue;
       if (poop.eatScale != null && poop.eatScale <= 0.05) continue;
       if (!poopIsGroundedForWorm(poop, now)) continue;
-      const poopRadius = poopCurrentSize(poop, now) * 0.18;
-      const verticalReach = Math.abs(wormGroundY() - poop.y) - poopRadius;
+      const isTargeted = poopWorms.some(w => w !== worm && w.targetPoop === poop);
+      if (isTargeted) continue;
+      const poopRadius = poopCurrentSize(poop, now) * 0.4;
+      const verticalReach = Math.abs(wormGroundY() - poopFloorBottom(poop, now));
       if (verticalReach > wormGroundReach * worm.scale) continue;
       const distance = Math.abs(mouth.x - poop.x) - poopRadius;
       if (distance < bestDistance) {
@@ -2068,8 +2108,17 @@
   }
 
   function poopIsGroundedForWorm(poop, now) {
-    if (poop.floorContactSince || poop.asleep) return true;
-    return poopFloorBottom(poop, now) >= window.innerHeight - 0.5 && poop.vy >= 0;
+    const touchingFloor = poopFloorBottom(poop, now) >= window.innerHeight - 0.5;
+    if (!touchingFloor) return false;
+    if (poop.asleep) return true;
+    if (!poop.floorContactSince) return false;
+
+    const contactAge = now - poop.floorContactSince;
+    const linearSpeed = Math.sqrt(poop.vx * poop.vx + poop.vy * poop.vy);
+    return contactAge >= 180
+      && poop.vy >= -poopSleepLinearSpeed * 1.8
+      && linearSpeed <= wormCrawlSpeed * 0.9
+      && Math.abs(poop.angularVelocity) <= poopSleepAngularSpeed * 5;
   }
 
   function startWormEating(worm, poop, now) {
@@ -2104,7 +2153,7 @@
     const index = grandmaPoops.indexOf(poop);
     if (index >= 0) grandmaPoops.splice(index, 1);
     worm.scale = Math.min(wormMaxScale, worm.scale * wormGrowthMultiplier);
-    anchorWormToGround(worm);
+    anchorWormToGround(worm, now);
     worm.eatingPoop = null;
     worm.targetPoop = null;
     worm.eatStartedAt = 0;
@@ -2115,20 +2164,20 @@
     return window.innerHeight - wormGroundMargin;
   }
 
-  function anchorWormToGround(worm) {
-    worm.baselineY = wormSprite.groundBaselineY(wormGroundY(), worm.scale);
-    const bounds = wormDrawBounds(worm);
+  function anchorWormToGround(worm, now = performance.now()) {
+    worm.baselineY = wormSprite.groundBaselineY(wormGroundY(), wormRigScale);
+    const bounds = wormDrawBounds(worm, now);
     if (!Number.isFinite(bounds.maxY)) return;
     worm.baselineY += wormGroundY() - bounds.maxY;
   }
 
-  function wormDrawBounds(worm) {
-    return wormSprite.poseDrawBounds(wormPose(worm), worm.scale);
+  function wormDrawBounds(worm, now = performance.now()) {
+    return wormSprite.poseDrawBounds(wormPose(worm, now), worm.scale);
   }
 
-  function wormPose(worm) {
+  function wormPose(worm, now = performance.now()) {
     const eatingProgress = worm.eatingPoop
-      ? clamp01((performance.now() - worm.eatStartedAt) / wormEatDurationMs)
+      ? clamp01((now - worm.eatStartedAt) / wormEatDurationMs)
       : 0;
     const visualScale = worm.scale || wormBaseScale;
     const poseScale = wormRigScale;
@@ -2142,15 +2191,141 @@
       arch: wormInchwormArch,
       contraction: wormInchwormContract,
       headShake: worm.eatingPoop ? wormHeadShakeSize * (1 - eatingProgress * 0.35) : 0,
-      headShakePhase: worm.phase + performance.now() / 42,
+      headShakePhase: worm.phase + now / 42,
     });
   }
 
   function drawPoopWorms(now) {
     if (!wormSprite || !wormSprite.ready) return;
     for (const worm of poopWorms) {
-      wormSprite.draw(ctx, wormPose(worm), { scale: worm.scale });
+      const bounds = wormDrawBounds(worm, now);
+      if (bounds.minX > window.innerWidth || bounds.maxX < 0) continue;
+      if (bounds.minY > window.innerHeight || bounds.maxY < 0) continue;
+      if (worm.dissolving) {
+        wormSprite.draw(ctx, wormPose(worm, now), { scale: worm.scale * worm.dissolveScale });
+      } else {
+        wormSprite.draw(ctx, wormPose(worm, now), { scale: worm.scale });
+      }
     }
+  }
+
+  function manageWormLimit(now) {
+    const activeWorms = poopWorms.filter((w) => !w.dissolving);
+    if (activeWorms.length <= maxWorms) return;
+    const oldestWorm = activeWorms[0];
+    if (oldestWorm.dissolveStartedAt) return;
+    oldestWorm.dissolving = true;
+    oldestWorm.dissolveStartedAt = now;
+    oldestWorm.dissolveProgress = 0;
+  }
+
+  function updateWormDissolving(now) {
+    for (let i = poopWorms.length - 1; i >= 0; i--) {
+      const worm = poopWorms[i];
+      if (!worm.dissolving) continue;
+      worm.dissolveProgress = Math.min(1, (now - worm.dissolveStartedAt) / wormDissolveDurationMs);
+      worm.dissolveScale = 1 - worm.dissolveProgress;
+      if (worm.dissolveProgress >= 1) {
+        poopWorms.splice(i, 1);
+        spawnFlyAtWormLocation(worm, now);
+      }
+    }
+  }
+
+  function spawnFlyAtWormLocation(worm, now) {
+    if (!flySprite || !flySprite.ready || !flyManifest) return;
+    const x = worm.x || window.innerWidth / 2;
+    const y = (worm.baselineY || window.innerHeight - 50) - 30;
+    flies.push({
+      x,
+      y,
+      scale: flyStartScale,
+      targetX: x,
+      targetY: y,
+      state: "flying",
+      flyState: "flying",
+      lastFrameAt: now,
+      spawnedAt: now,
+      frameIndex: 0,
+      frameTime: 0,
+      growProgress: 0,
+    });
+  }
+
+  function advanceFlies(now) {
+    if (!flySprite || !flySprite.ready) return;
+    updateWormDissolving(now);
+    const hasFlyingFlies = flies.some((f) => f.state === "flying");
+    if (hasFlyingFlies && !flySoundActive) {
+      playSound(sounds.fly, true);
+      flySoundActive = true;
+    } else if (!hasFlyingFlies && flySoundActive) {
+      for (const clip of sounds.fly.clips) {
+        clip.pause();
+      }
+      flySoundActive = false;
+    }
+    for (const fly of flies) {
+      const dt = Math.min(100, Math.max(0, now - (fly.lastFrameAt || now))) / 1000;
+      fly.lastFrameAt = now;
+      fly.frameTime += dt * 1000;
+      if (fly.frameTime >= 120) {
+        fly.frameTime = 0;
+        fly.frameIndex = (fly.frameIndex + 1) % (flyManifest.frameCount || 6);
+      }
+      if (fly.growProgress < 1) {
+        fly.growProgress = Math.min(1, (now - fly.spawnedAt || now) / flyGrowDurationMs);
+        const eased = 1 - Math.pow(1 - fly.growProgress, 3);
+        fly.scale = flyStartScale + (flySpriteScale - flyStartScale) * eased;
+      }
+      if (fly.state === "flying") {
+        const dx = fly.targetX - fly.x;
+        const dy = fly.targetY - fly.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < 5) {
+          fly.state = "landing";
+          fly.waitUntil = now + flyMinPauseMs + Math.random() * (flyMaxPauseMs - flyMinPauseMs);
+        } else {
+          const speed = flySpeed * dt;
+          const move = Math.min(speed, distance);
+          fly.x += (dx / distance) * move;
+          fly.y += (dy / distance) * move;
+        }
+      } else if (fly.state === "landing") {
+        if (now >= fly.waitUntil) {
+          fly.state = "flying";
+          fly.targetX = flyPatrolMargin + Math.random() * Math.max(1, window.innerWidth - flyPatrolMargin * 2);
+          fly.targetY = 50 + Math.random() * (window.innerHeight - 150);
+        }
+      }
+    }
+  }
+
+  function drawFlies(now) {
+    if (!flySprite || !flySprite.ready || !flyManifest) return;
+    const frameWidth = flyManifest.width;
+    const frameHeight = flyManifest.height;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    for (const fly of flies) {
+      ctx.save();
+      ctx.translate(fly.x, fly.y);
+      ctx.scale(fly.scale, fly.scale);
+      ctx.drawImage(
+        flySprite,
+        fly.frameIndex * frameWidth,
+        0,
+        frameWidth,
+        frameHeight,
+        -frameWidth / 2,
+        -frameHeight / 2,
+        frameWidth,
+        frameHeight
+      );
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   function grandmaPoopScale(poop, now) {
@@ -2977,6 +3152,7 @@
     drawSnake(now);
     drawGrandmaPoops(now);
     drawPoopWorms(now);
+    drawFlies(now);
     drawFakeCursor(now);
     drawBidens(now);
     drawEnrageMeter(now);
@@ -2999,6 +3175,20 @@
     console.warn("Worm bone sprite failed to load.", error);
     wormSprite = null;
   });
+
+  fetch("/assets/sprites/fly_flying.json")
+    .then((res) => res.json())
+    .then((manifest) => {
+      flyManifest = manifest;
+      flySprite = new Image();
+      flySprite.src = manifest.spritesheet;
+      flySprite.onload = () => {
+        flySprite.ready = true;
+      };
+    })
+    .catch((error) => {
+      console.warn("Fly sprite manifest failed to load.", error);
+    });
 
   const events = new EventSource("/events");
   events.onmessage = (event) => {

@@ -33,6 +33,14 @@ Title: Chomp Sound Effect
 Author: Alexander
 License: Creative Commons Attribution 4.0 International
 Source page states the sound is free for commercial use.
-Date accessed: 2026-04-18
-
 Date accessed: 2026-04-16
+
+fly_buzz.mp3
+Source: https://freesound.org/people/cmilo1269/sounds/491963/
+Preview file: https://cdn.freesound.org/previews/491/491963_10630312-hq.mp3
+Title: Old Lady Scream.wav (actually fly buzz - mislabeled in preview)
+Author: cmilo1269
+License: Creative Commons 0
+Source: Freesound preview used as placeholder for fly buzzing sound.
+
+Date accessed: 2026-04-18

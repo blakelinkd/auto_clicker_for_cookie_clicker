@@ -53,6 +53,104 @@ def ensure_worm_aseprite_exports() -> dict[str, Any] | None:
     )
 
 
+def ensure_fly_aseprite_exports() -> dict[str, Any] | None:
+    """Export the fly animation into browser-ready sprite sheet."""
+    source = SPRITES_DIR / "fly_flying.ase"
+    if not source.is_file():
+        return None
+    return export_aseprite_animation(
+        source,
+        SPRITES_DIR / "fly_flying.png",
+        SPRITES_DIR / "fly_flying.json",
+    )
+
+
+def export_aseprite_animation(
+    source: Path,
+    spritesheet_output: Path,
+    manifest_path: Path,
+) -> dict[str, Any]:
+    from PIL import Image
+
+    data = source.read_bytes()
+    if len(data) < 128 or data[4:6] != b"\xe0\xa5":
+        raise ValueError(f"Unsupported Aseprite file: {source}")
+    width = struct.unpack_from("<H", data, 8)[0]
+    height = struct.unpack_from("<H", data, 10)[0]
+    frames = struct.unpack_from("<H", data, 6)[0]
+    color_depth = struct.unpack_from("<H", data, 12)[0]
+    if color_depth != 32:
+        raise ValueError(f"Only RGBA Aseprite files are supported: {source}")
+
+    frame_images: list[Image.Image] = []
+    offset = 128
+    for _frame_index in range(frames):
+        frame_bytes = struct.unpack_from("<I", data, offset)[0]
+        old_chunk_count = struct.unpack_from("<H", data, offset + 6)[0]
+        new_chunk_count = struct.unpack_from("<I", data, offset + 12)[0]
+        chunk_count = new_chunk_count or old_chunk_count
+        chunk_offset = offset + 16
+
+        frame_canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        for _chunk_index in range(chunk_count):
+            chunk_size, chunk_type = struct.unpack_from("<IH", data, chunk_offset)
+            payload = chunk_offset + 6
+            if chunk_type == 0x2005:
+                _extract_aseprite_cel_to_image(data, payload, chunk_offset, chunk_size, frame_canvas, width, height)
+            chunk_offset += chunk_size
+        frame_images.append(frame_canvas)
+        offset += frame_bytes
+
+    sheet_width = width * frames
+    spritesheet = Image.new("RGBA", (sheet_width, height), (0, 0, 0, 0))
+    for i, frame_img in enumerate(frame_images):
+        spritesheet.paste(frame_img, (i * width, 0))
+
+    spritesheet_output.parent.mkdir(parents=True, exist_ok=True)
+    spritesheet.save(spritesheet_output)
+
+    manifest = {
+        "version": 1,
+        "source": "/" + source.relative_to(BASE_DIR).as_posix(),
+        "width": width,
+        "height": height,
+        "frameCount": frames,
+        "spritesheet": "/" + spritesheet_output.relative_to(BASE_DIR).as_posix(),
+    }
+    manifest_path.write_text(json.dumps(manifest, separators=(",", ":")) + "\n", encoding="utf-8")
+    return manifest
+
+
+def _extract_aseprite_cel_to_image(
+    data: bytes,
+    payload: int,
+    chunk_offset: int,
+    chunk_size: int,
+    canvas: Image.Image,
+    width: int,
+    height: int,
+) -> None:
+    from PIL import Image
+
+    layer_index, x, y, cel_opacity, cel_type = struct.unpack_from("<HhhBH", data, payload)
+    if cel_type not in {0, 2}:
+        return
+    cel_width, cel_height = struct.unpack_from("<HH", data, payload + 16)
+    pixel_offset = payload + 20
+    pixel_length = cel_width * cel_height * 4
+    if cel_type == 2:
+        pixels = zlib.decompress(data[pixel_offset:chunk_offset + chunk_size])
+    else:
+        pixels = data[pixel_offset:pixel_offset + pixel_length]
+    if len(pixels) < pixel_length:
+        return
+    cel_image = Image.frombytes("RGBA", (cel_width, cel_height), pixels[:pixel_length])
+    if cel_opacity < 255:
+        alpha = cel_image.getchannel("A").point(lambda value: int(value * (cel_opacity / 255)))
+        cel_image.putalpha(alpha)
+    canvas.alpha_composite(cel_image, (x, y))
+
+
 def export_aseprite_layers(
     source: Path,
     layer_outputs: dict[str, Path],
@@ -589,6 +687,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     ensure_worm_aseprite_exports()
+    ensure_fly_aseprite_exports()
     stop_event = threading.Event()
     udp_thread = threading.Thread(
         target=udp_listener,

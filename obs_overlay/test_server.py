@@ -1,5 +1,6 @@
 import json
 import queue
+import shutil
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -41,6 +42,42 @@ class ServerEventTests(unittest.TestCase):
             "type": "reload_overlay",
             "source": "overlay_server",
         })
+
+    def test_overlay_reload_event_uses_source(self):
+        event = server.overlay_reload_event("overlay_file_watch")
+
+        self.assertEqual(event, {
+            "version": 1,
+            "type": "reload_overlay",
+            "source": "overlay_file_watch",
+        })
+
+    def test_watched_file_snapshot_tracks_size_and_mtime(self):
+        temp_dir = Path("obs_overlay/.test_tmp")
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+        try:
+            temp_dir.mkdir()
+            watched_path = temp_dir / "overlay.js"
+            watched_path.write_text("one", encoding="utf-8")
+
+            first = server.watched_file_snapshot((watched_path,))
+            watched_path.write_text("two two", encoding="utf-8")
+            second = server.watched_file_snapshot((watched_path,))
+        finally:
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+
+        self.assertIn(watched_path, first)
+        self.assertIn(watched_path, second)
+        self.assertNotEqual(first[watched_path], second[watched_path])
+
+    def test_watched_file_snapshot_handles_missing_files(self):
+        missing_path = Path("__missing_overlay_file__.js")
+
+        snapshot = server.watched_file_snapshot((missing_path,))
+
+        self.assertIsNone(snapshot[missing_path])
 
     def test_validate_hud_message_event(self):
         event = server.validate_spawn_event(

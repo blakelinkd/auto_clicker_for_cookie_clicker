@@ -4,7 +4,7 @@
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
   const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-worm-39";
+  const assetVersion = "snake-heat-worm-41";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const fakeCursorSprite = new Image();
@@ -71,6 +71,8 @@
   const wormCrunchIntervalMs = 520;
   const wormHeadShakeSize = 3.5;
   const wormGrowthMultiplier = 1.12;
+  const wormMaxScale = 1.42;
+  const wormRigScale = wormBaseScale;
   const twitchChatQuipIntervalMs = 180000;
   const defaultHudMessageTtlMs = 4000;
   const snake = {
@@ -2052,6 +2054,7 @@
     for (const poop of grandmaPoops) {
       if (poop.beingEaten) continue;
       if (poop.eatScale != null && poop.eatScale <= 0.05) continue;
+      if (!poopIsGroundedForWorm(poop, now)) continue;
       const poopRadius = poopCurrentSize(poop, now) * 0.18;
       const verticalReach = Math.abs(wormGroundY() - poop.y) - poopRadius;
       if (verticalReach > wormGroundReach * worm.scale) continue;
@@ -2064,8 +2067,14 @@
     return best;
   }
 
+  function poopIsGroundedForWorm(poop, now) {
+    if (poop.floorContactSince || poop.asleep) return true;
+    return poopFloorBottom(poop, now) >= window.innerHeight - 0.5 && poop.vy >= 0;
+  }
+
   function startWormEating(worm, poop, now) {
     if (poop.beingEaten) return;
+    if (!poopIsGroundedForWorm(poop, now)) return;
     poop.beingEaten = true;
     poop.asleep = true;
     poop.vx = 0;
@@ -2094,7 +2103,7 @@
 
     const index = grandmaPoops.indexOf(poop);
     if (index >= 0) grandmaPoops.splice(index, 1);
-    worm.scale *= wormGrowthMultiplier;
+    worm.scale = Math.min(wormMaxScale, worm.scale * wormGrowthMultiplier);
     anchorWormToGround(worm);
     worm.eatingPoop = null;
     worm.targetPoop = null;
@@ -2121,10 +2130,13 @@
     const eatingProgress = worm.eatingPoop
       ? clamp01((performance.now() - worm.eatStartedAt) / wormEatDurationMs)
       : 0;
+    const visualScale = worm.scale || wormBaseScale;
+    const poseScale = wormRigScale;
+    const facingOffset = worm.direction >= 0 ? 0 : wormSprite.lengthAtScale(visualScale) - wormSprite.lengthAtScale(poseScale);
     return wormSprite.buildInchwormPose({
-      x: worm.x,
+      x: worm.x - facingOffset,
       y: worm.baselineY,
-      scale: worm.scale,
+      scale: poseScale,
       direction: worm.direction,
       phase: worm.phase,
       arch: wormInchwormArch,

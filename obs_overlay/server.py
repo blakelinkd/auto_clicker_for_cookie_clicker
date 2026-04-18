@@ -30,6 +30,12 @@ DEFAULT_HUD_MESSAGE_TTL_MS = 4000
 MAX_HUD_MESSAGE_LENGTH = 500
 MIN_HUD_MESSAGE_MS = 4000
 MAX_HUD_MESSAGE_MS = 86_400_000
+OVERLAY_RELOAD_WATCH_PATHS = (
+    BASE_DIR / "web" / "index.html",
+    BASE_DIR / "web" / "overlay.js",
+)
+OVERLAY_RELOAD_POLL_SECONDS = 0.35
+OVERLAY_RELOAD_DEBOUNCE_SECONDS = 0.7
 
 
 def ensure_worm_aseprite_exports() -> dict[str, Any] | None:
@@ -272,6 +278,45 @@ def broadcast_event(payload: dict[str, Any]) -> None:
             pass
 
 
+def overlay_reload_event(source: str = "overlay_server") -> dict[str, Any]:
+    event = validate_spawn_event({"type": "reload_overlay", "source": source})
+    if event is None:
+        raise RuntimeError("reload_overlay event validation failed")
+    return event
+
+
+def watched_file_snapshot(paths: tuple[Path, ...] = OVERLAY_RELOAD_WATCH_PATHS) -> dict[Path, tuple[int, int] | None]:
+    snapshot: dict[Path, tuple[int, int] | None] = {}
+    for path in paths:
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            snapshot[path] = None
+            continue
+        snapshot[path] = (stat.st_mtime_ns, stat.st_size)
+    return snapshot
+
+
+def run_overlay_reload_watch_loop(
+    stop_event: threading.Event,
+    *,
+    paths: tuple[Path, ...] = OVERLAY_RELOAD_WATCH_PATHS,
+    poll_seconds: float = OVERLAY_RELOAD_POLL_SECONDS,
+    debounce_seconds: float = OVERLAY_RELOAD_DEBOUNCE_SECONDS,
+) -> None:
+    previous = watched_file_snapshot(paths)
+    pending_reload_at = 0.0
+    while not stop_event.wait(poll_seconds):
+        current = watched_file_snapshot(paths)
+        if current != previous:
+            previous = current
+            pending_reload_at = time.monotonic() + debounce_seconds
+            continue
+        if pending_reload_at and time.monotonic() >= pending_reload_at:
+            pending_reload_at = 0.0
+            broadcast_event(overlay_reload_event("overlay_file_watch"))
+
+
 def demo_event() -> dict[str, Any]:
     phase = (time.monotonic() * 0.37) % 1.0
     return {
@@ -429,11 +474,7 @@ class OverlayRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _serve_reload_overlay(self) -> None:
-        event = validate_spawn_event({"type": "reload_overlay"})
-        if event is None:
-            self.send_error(500)
-            return
-        broadcast_event(event)
+        broadcast_event(overlay_reload_event())
         data = b"queued overlay reload\n"
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -540,6 +581,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bidens", type=float, default=0.0, metavar="SECONDS")
     parser.add_argument("--worms", type=float, default=0.0, metavar="SECONDS")
     parser.add_argument("--fruit-interval-seconds", type=float, default=20.0)
+    parser.add_argument("--no-auto-reload", action="store_true")
     parser.add_argument("--quiet", action="store_true")
     return parser.parse_args()
 
@@ -560,6 +602,13 @@ def main() -> int:
     server = ReusableThreadingHTTPServer((args.host, args.port), OverlayRequestHandler)
     server.quiet = args.quiet
     server.snake_enabled = not args.no_snake
+    if not args.no_auto_reload:
+        threading.Thread(
+            target=run_overlay_reload_watch_loop,
+            args=(stop_event,),
+            daemon=True,
+            name="overlay-reload-watch",
+        ).start()
     if args.bidens > 0:
         threading.Thread(
             target=run_periodic_biden_loop,

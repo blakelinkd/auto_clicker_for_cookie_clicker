@@ -923,6 +923,8 @@ class DomLoopLateStagePreparer:
 class DomShimmerHandler:
     """Owns shimmer tracking, resolution, and click dispatch."""
 
+    _FORTUNE_STALE_AFTER_CLICK_SECONDS = 0.35
+
     def __init__(
         self,
         *,
@@ -984,11 +986,25 @@ class DomShimmerHandler:
         self._shimmer_click_cooldown = shimmer_click_cooldown
         self._overlay_click_delay_seconds = float(overlay_click_delay_seconds)
         self._overlay_preview_started: dict[int, float] = {}
+        self._ignored_fortune_ids: set[int] = set()
 
     def process(self, context: DomShimmerContext) -> DomShimmerResult:
         shimmer_started = self._perf_counter()
-        active_ids = {item["id"] for item in context.shimmers}
-        active_by_id = {item["id"]: item for item in context.shimmers}
+        raw_active_ids = {int(item["id"]) for item in context.shimmers}
+        for shimmer_id in list(self._ignored_fortune_ids):
+            if shimmer_id not in raw_active_ids:
+                self._ignored_fortune_ids.discard(shimmer_id)
+        self._mark_stale_clicked_fortunes_ignored(context)
+        active_ids = {
+            int(item["id"])
+            for item in context.shimmers
+            if int(item["id"]) not in self._ignored_fortune_ids
+        }
+        active_by_id = {
+            int(item["id"]): item
+            for item in context.shimmers
+            if int(item["id"]) not in self._ignored_fortune_ids
+        }
         shimmer_telemetry = context.snapshot.get("shimmerTelemetry") if isinstance(context.snapshot, dict) else None
         last_golden_decision = (
             shimmer_telemetry.get("lastGoldenDecision")
@@ -1197,14 +1213,19 @@ class DomShimmerHandler:
         clicked_shimmer = False
         should_skip_wrath = self._should_skip_wrath_shimmer(context.buffs)
         for shimmer in ([] if context.pause_value_actions_during_clot or not context.shimmer_autoclick_enabled else context.shimmers):
+            shimmer_id = int(shimmer["id"])
+            if shimmer_id in self._ignored_fortune_ids:
+                continue
             if should_skip_wrath and shimmer.get("wrath"):
                 self._emit_skipped_wrath_overlay(shimmer, context.now)
                 continue
-            first_seen = self._shimmer_first_seen.get(shimmer["id"], context.now)
+            if shimmer.get("type") == "fortune" and shimmer_id in self._pending_shimmer_results:
+                continue
+            first_seen = self._shimmer_first_seen.get(shimmer_id, context.now)
             click_delay = 0.15 if shimmer.get("type") == "fortune" else self._shimmer_click_delay_seconds
             if (context.now - first_seen) < click_delay:
                 continue
-            last_click = self._recent_shimmer_clicks.get(shimmer["id"])
+            last_click = self._recent_shimmer_clicks.get(shimmer_id)
             if last_click is not None and (context.now - last_click) < self._shimmer_click_cooldown:
                 continue
             if not self._can_interact_with_game(context.now):
@@ -1255,11 +1276,10 @@ class DomShimmerHandler:
                     hold=self._bonus_click_hold,
                 )
             click_time = self._monotonic()
-            shimmer_id = int(shimmer["id"])
             self._overlay_preview_started.pop(shimmer_id, None)
             self._emit_overlay_spawn(shimmer, mode="clicked", clicked_at=click_time)
-            self._recent_shimmer_clicks[shimmer["id"]] = click_time
-            self._pending_shimmer_results[shimmer["id"]] = self._build_pending_result(
+            self._recent_shimmer_clicks[shimmer_id] = click_time
+            self._pending_shimmer_results[shimmer_id] = self._build_pending_result(
                 shimmer=shimmer,
                 buffs=context.buffs,
                 clicked_at=click_time,
@@ -1267,8 +1287,8 @@ class DomShimmerHandler:
                 visible_ids=visible_ids,
                 visible_wrath_ids=visible_wrath_ids,
             )
-            previous_attempt = self._shimmer_click_attempts.get(shimmer["id"])
-            self._shimmer_click_attempts[shimmer["id"]] = {
+            previous_attempt = self._shimmer_click_attempts.get(shimmer_id)
+            self._shimmer_click_attempts[shimmer_id] = {
                 "first_click": click_time if previous_attempt is None else previous_attempt.get("first_click", click_time),
                 "attempts": 1 if previous_attempt is None else int(previous_attempt.get("attempts", 0)) + 1,
                 "last_logged": 0.0,
@@ -1289,6 +1309,19 @@ class DomShimmerHandler:
             last_seen_golden_decision=last_seen_golden_decision,
             suppress_main_click_until=suppress_main_click_until,
         )
+
+    def _mark_stale_clicked_fortunes_ignored(self, context: DomShimmerContext) -> None:
+        for shimmer in context.shimmers:
+            if shimmer.get("type") != "fortune":
+                continue
+            shimmer_id = int(shimmer["id"])
+            if shimmer_id not in self._pending_shimmer_results:
+                continue
+            attempt = self._shimmer_click_attempts.get(shimmer_id)
+            first_click = 0.0 if not isinstance(attempt, dict) else float(attempt.get("first_click", 0.0))
+            if not first_click or (context.now - first_click) < self._FORTUNE_STALE_AFTER_CLICK_SECONDS:
+                continue
+            self._ignored_fortune_ids.add(shimmer_id)
 
     def _prepare_overlay_click_delay(
         self,

@@ -1724,6 +1724,98 @@ class DomShimmerHandlerTests(unittest.TestCase):
         self.assertEqual(pending[-100042]["type"], "fortune")
         self.assertEqual(pending[-100042]["effect_name"], "Fortune #001")
 
+    def test_process_does_not_retry_pending_fortune_click(self):
+        fortune = {
+            "id": -100042,
+            "type": "fortune",
+            "wrath": False,
+            "client_x": 300,
+            "client_y": 40,
+            "screen_x": 400,
+            "screen_y": 240,
+            "life": 450,
+            "dur": 500,
+            "effect_name": "Fortune #001",
+        }
+        handler, calls = self._handler(
+            recent_shimmer_clicks={-100042: 15.0},
+            shimmer_first_seen={-100042: 9.0},
+            shimmer_click_attempts={-100042: {"first_click": 15.0, "attempts": 1, "last_logged": 0.0}},
+            pending_shimmer_results={-100042: {"type": "fortune", "wrath": False, "buffs": ()}},
+            monotonic=lambda: 15.2,
+        )
+
+        result = handler.process(
+            DomShimmerContext(
+                snapshot={},
+                shimmers=[fortune],
+                buffs=[],
+                now=15.2,
+                pause_value_actions_during_clot=False,
+                shimmer_autoclick_enabled=True,
+                last_seen_golden_decision=None,
+                suppress_main_click_until=0.0,
+            )
+        )
+
+        self.assertFalse(result.handled)
+        self.assertEqual(calls["clicks"], [])
+        self.assertEqual(calls["click_runtime"], [])
+
+    def test_process_treats_stale_clicked_fortune_as_gone(self):
+        fortune = {
+            "id": -100042,
+            "type": "fortune",
+            "wrath": False,
+            "client_x": 300,
+            "client_y": 40,
+            "screen_x": 400,
+            "screen_y": 240,
+            "life": 450,
+            "dur": 500,
+            "effect_name": "Fortune #001",
+        }
+        pending = {-100042: {"type": "fortune", "wrath": False, "buffs": (), "selection_mode": "scan"}}
+        handler, calls = self._handler(
+            recent_shimmer_clicks={-100042: 15.0},
+            shimmer_first_seen={-100042: 9.0},
+            shimmer_click_attempts={-100042: {"first_click": 15.0, "attempts": 1, "last_logged": 0.0}},
+            pending_shimmer_results=pending,
+            monotonic=lambda: 15.5,
+        )
+
+        first = handler.process(
+            DomShimmerContext(
+                snapshot={},
+                shimmers=[fortune],
+                buffs=[],
+                now=15.5,
+                pause_value_actions_during_clot=False,
+                shimmer_autoclick_enabled=True,
+                last_seen_golden_decision=None,
+                suppress_main_click_until=0.0,
+            )
+        )
+        second = handler.process(
+            DomShimmerContext(
+                snapshot={},
+                shimmers=[fortune],
+                buffs=[],
+                now=15.8,
+                pause_value_actions_during_clot=False,
+                shimmer_autoclick_enabled=True,
+                last_seen_golden_decision=None,
+                suppress_main_click_until=0.0,
+            )
+        )
+
+        self.assertFalse(first.handled)
+        self.assertFalse(second.handled)
+        self.assertEqual(calls["clicks"], [])
+        self.assertEqual(calls["cleared"], [-100042])
+        self.assertEqual(calls["collect_runtime"], [("fortune", -100042, "no_new_buff", False)])
+        self.assertNotIn(-100042, pending)
+
 
 class DomActionCoordinatorTests(unittest.TestCase):
     def test_run_returns_first_handled_stage(self):

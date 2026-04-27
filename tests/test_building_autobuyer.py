@@ -167,7 +167,7 @@ class BuildingAutobuyerHorizonTests(unittest.TestCase):
         self.assertIsNotNone(action)
         self.assertEqual(action.quantity, 10)
 
-    def test_standard_autobuy_stays_on_single_purchase_outside_early_batch_window(self):
+    def test_batches_to_10_when_bundle_is_affordable_even_beyond_early_game(self):
         autobuyer = BuildingAutobuyer(
             _LogStub(),
             reserve_cps_seconds=0.0,
@@ -189,7 +189,7 @@ class BuildingAutobuyerHorizonTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(action)
-        self.assertEqual(action.quantity, 1)
+        self.assertEqual(action.quantity, 10)
 
     def test_early_game_batches_to_100_when_bundle_is_affordable_and_within_horizon(self):
         autobuyer = BuildingAutobuyer(
@@ -263,7 +263,7 @@ class BuildingAutobuyerHorizonTests(unittest.TestCase):
         self.assertIsNotNone(action)
         self.assertEqual(action.quantity, 1)
 
-    def test_late_game_does_not_batch_standard_autobuys(self):
+    def test_late_game_batches_with_sufficient_spendable(self):
         autobuyer = BuildingAutobuyer(
             _LogStub(),
             reserve_cps_seconds=0.0,
@@ -285,7 +285,31 @@ class BuildingAutobuyerHorizonTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(action)
-        self.assertEqual(action.quantity, 1)
+        self.assertEqual(action.quantity, 100)
+
+    def test_late_game_batches_even_when_bundle_payback_exceeds_horizon(self):
+        autobuyer = BuildingAutobuyer(
+            _LogStub(),
+            reserve_cps_seconds=0.0,
+            max_spend_ratio=1.0,
+            payback_horizon_seconds=20.0,
+        )
+
+        action = autobuyer.get_action(
+            _snapshot(
+                cookies=1_000_000.0,
+                price=100.0,
+                stored_cps=1.0,
+                sum_price_10=1_500.0,
+                sum_price_100=100_000.0,
+                amount=120,
+            ),
+            _identity_point,
+            now=10.0,
+        )
+
+        self.assertIsNotNone(action)
+        self.assertEqual(action.quantity, 100)
 
     def test_holds_affordable_filler_when_better_horizon_target_exists(self):
         autobuyer = BuildingAutobuyer(

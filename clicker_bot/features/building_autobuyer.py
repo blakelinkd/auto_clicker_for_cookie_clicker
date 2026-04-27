@@ -717,7 +717,16 @@ class BuildingAutobuyer:
             return 1
         recovery_gap = self._get_recovery_gap(candidate)
         if recovery_gap <= 0:
-            return self._select_early_game_batch_quantity(candidate, spendable, total_buildings)
+            early_qty = self._select_early_game_batch_quantity(candidate, spendable, total_buildings)
+            if early_qty > 1:
+                return early_qty
+            if int(total_buildings or 0) <= EARLY_GAME_BULK_TOTAL_BUILDINGS:
+                return 1
+            if candidate.get("sum_price_100") is not None and float(candidate["sum_price_100"]) <= spendable:
+                return 100
+            if candidate.get("sum_price_10") is not None and float(candidate["sum_price_10"]) <= spendable:
+                return 10
+            return 1
         if recovery_gap >= 100 and candidate.get("sum_price_100") is not None and float(candidate["sum_price_100"]) <= spendable:
             return 100
         if recovery_gap >= 10 and candidate.get("sum_price_10") is not None and float(candidate["sum_price_10"]) <= spendable:

@@ -185,7 +185,17 @@ class UpgradeStoreController:
             viewport_left <= target_center_x <= viewport_right
             and viewport_top <= target_center_y <= viewport_bottom
         )
-        actionable = bool(upgrade.get("visible")) or row_within_viewport or center_within_viewport
+        has_viewport_bounds = all(
+            axis in viewport and isinstance(viewport.get(axis), (int, float))
+            for axis in ("left", "top", "right", "bottom")
+        )
+        # Trust viewport geometry over the feed's coarse visible flag when the
+        # upgrades viewport has real bounds. The bridge can report an upgrade as
+        # visible when it intersects the broader store area even though it is
+        # outside the upgrades section viewport.
+        actionable = row_within_viewport or center_within_viewport
+        if not actionable and not has_viewport_bounds and bool(upgrade.get("visible")):
+            actionable = True
 
         return {
             "reason": "upgrade_actionable" if actionable else "upgrade_not_actionable",

@@ -117,6 +117,37 @@ class UpgradeStoreControllerTests(unittest.TestCase):
         self.assertEqual(action.kind, "focus_store_section")
         self.assertEqual(action.section_name, "upgrades")
 
+    def test_focuses_store_when_upgrade_is_flagged_visible_but_outside_upgrades_viewport(self):
+        snapshot = {
+            "store": {
+                "buyMode": 1,
+                "buyBulk": 1,
+                "sections": {
+                    "upgrades": {
+                        "collapsed": False,
+                        "toggle": _rect(10, 10),
+                        "rect": _box(2243, -50, 2543, 48),
+                    }
+                },
+            },
+            "upgrades": [
+                {
+                    "id": 330,
+                    "displayName": "Dragon cookie",
+                    "canBuy": True,
+                    "visible": True,
+                    "row": _box(2249, 894, 2297, 942),
+                    "target": _box(2249, 894, 2297, 942),
+                }
+            ],
+        }
+
+        action = self.controller.plan_buy(snapshot, _identity_point, 330)
+
+        self.assertIsNotNone(action)
+        self.assertEqual(action.kind, "focus_store_section")
+        self.assertEqual(action.section_name, "upgrades")
+
     def test_clicks_upgrade_when_flagged_not_visible_but_target_is_inside_viewport(self):
         snapshot = {
             "store": {

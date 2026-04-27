@@ -250,6 +250,7 @@ def build_default_dom_loop_service_factory(
     record_shimmer_click_runtime: Callable[..., None],
     record_shimmer_collect_runtime: Callable[..., None],
     overlay_event_sender: Callable[..., None] | None = None,
+    combat_log_sender: Callable[..., None] | None = None,
     get_pending_hand_shimmer: Callable[[], Any],
     clear_pending_hand_shimmer: Callable[[], None],
     recent_shimmer_clicks: dict[Any, Any],
@@ -351,6 +352,7 @@ def build_default_dom_loop_service_factory(
             main_click_suppress_seconds=main_click_suppress_seconds,
             suppress_main_click_until_getter=suppress_main_click_until_getter,
             suppress_main_click_until_setter=suppress_main_click_until_setter,
+            combat_log_sender=combat_log_sender,
         ),
         action_planner_builder=lambda: dom_action_planner_cls(
             plan_reset_store_to_default=plan_reset_store_to_default,

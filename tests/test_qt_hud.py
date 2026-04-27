@@ -641,3 +641,53 @@ def test_qt_dashboard_compatibility_aliases(qtbot):
     window = _create_test_window(qtbot)
     assert window.summary_vars is window.summary_labels
     assert window.timing_vars is window.timing_labels
+
+
+@pytest.mark.qt
+def test_qt_dashboard_overlay_voice_repeat_timer(qtbot):
+    """Voice messages with repeat interval create a timer that fires repeatedly."""
+    import time
+    sent = []
+    spoken = []
+    window = _create_test_window(
+        qtbot,
+        send_overlay_message=lambda *args, **kwargs: sent.append((args, kwargs)),
+        send_voice_message=lambda *args, **kwargs: spoken.append((args, kwargs)),
+    )
+
+    window.overlay_message_input.setText("Repeat this")
+    window.overlay_ttl_input.setText("")
+    window.overlay_repeat_input.setText("0.01")  # 0.01 minutes = 0.6 seconds
+    window.overlay_voice_checkbox.setChecked(True)
+    window._submit_overlay_message()
+
+    assert len(sent) == 1
+    assert len(spoken) == 1  # immediate voice message
+    event_id = sent[0][1]["event_id"]
+    card = window._overlay_message_cards[event_id]
+    assert card["voice_checkbox"].isChecked() is True
+    assert card["voice_timer"] is not None
+    assert card["voice_timer"].isActive()
+
+    # Wait for timer to fire at least once
+    qtbot.wait(800)  # 0.8 seconds > 0.6 seconds interval
+
+    # Should have at least one more voice message (maybe more depending on timing)
+    assert len(spoken) >= 2, f"Expected at least 2 voice calls, got {len(spoken)}"
+    # All voice calls should have same message and event_id
+    for args, kwargs in spoken:
+        assert args[0] == "Repeat this"
+        assert kwargs["event_id"] == event_id
+
+    # Timer should still be active (single-shot restarted)
+    assert card["voice_timer"] is not None
+    assert card["voice_timer"].isActive()
+
+    # Uncheck voice checkbox - timer should stop
+    card["voice_checkbox"].setChecked(False)
+    window._overlay_card_settings_changed(event_id)
+    assert card["voice_timer"] is None
+    # No new voice messages after disabling
+    spoken_before = len(spoken)
+    qtbot.wait(500)
+    assert len(spoken) == spoken_before

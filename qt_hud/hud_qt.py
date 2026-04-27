@@ -1239,6 +1239,7 @@ class QtDashboard(QMainWindow):
             card["ttl_input"].setText(self._format_optional_minutes(ttl_minutes))
             card["repeat_input"].setText(self._format_optional_minutes(repeat_minutes))
             card["voice_checkbox"].setChecked(bool(voice_enabled))
+            self._update_voice_timer(card)
             return
 
         card_widget = QFrame()
@@ -1291,7 +1292,10 @@ class QtDashboard(QMainWindow):
             "ttl_input": ttl_input,
             "repeat_input": repeat_input,
             "voice_checkbox": voice_checkbox,
+            "voice_timer": None,
         }
+        card = self._overlay_message_cards[event_id]
+        self._update_voice_timer(card)
         ttl_input.editingFinished.connect(lambda event_id=event_id: self._overlay_card_settings_changed(event_id))
         repeat_input.editingFinished.connect(lambda event_id=event_id: self._overlay_card_settings_changed(event_id))
         voice_checkbox.stateChanged.connect(lambda _state, event_id=event_id: self._overlay_card_settings_changed(event_id))
@@ -1307,6 +1311,7 @@ class QtDashboard(QMainWindow):
         except ValueError as exc:
             self._set_overlay_status(str(exc), error=True)
             return
+        self._update_voice_timer(card)
         self.send_overlay_message(
             card["message"],
             ttl_minutes=ttl_minutes,
@@ -1323,12 +1328,49 @@ class QtDashboard(QMainWindow):
         card = self._overlay_message_cards.pop(event_id, None)
         if card is None:
             return
+        self._update_voice_timer(card)  # Stop any active timer
         card["widget"].setParent(None)
         card["widget"].deleteLater()
         self.delete_overlay_message(event_id)
         self._save_overlay_messages_to_config()
         self._set_overlay_status("Overlay message deleted.", error=False)
 
+    def _update_voice_timer(self, card):
+        """Update or cancel the voice repeat timer based on current card settings."""
+        timer = card.get("voice_timer")
+        if timer is not None:
+            timer.stop()
+            timer.deleteLater()
+            card["voice_timer"] = None
+        
+        if not card["voice_checkbox"].isChecked():
+            return
+        
+        try:
+            repeat_minutes = self._parse_optional_positive_minutes(card["repeat_input"].text(), "Repeat interval")
+        except ValueError:
+            return
+        
+        if repeat_minutes is None or repeat_minutes <= 0:
+            return
+        
+        interval_ms = int(repeat_minutes * 60 * 1000)
+        timer = QTimer(card["widget"])
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda event_id=card["event_id"]: self._on_voice_repeat(event_id))
+        timer.start(interval_ms)
+        card["voice_timer"] = timer
+    
+    def _on_voice_repeat(self, event_id):
+        """Handle voice repeat timer firing."""
+        card = self._overlay_message_cards.get(event_id)
+        if card is None:
+            return
+        if not card["voice_checkbox"].isChecked():
+            return
+        self.send_voice_message(card["message"], submitted_at=time.time(), event_id=event_id)
+        self._update_voice_timer(card)
+    
     def _format_optional_minutes(self, value):
         return "" if value is None else f"{float(value):g}"
 

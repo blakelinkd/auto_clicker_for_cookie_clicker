@@ -356,8 +356,18 @@ def validate_spawn_event(payload: Any) -> dict[str, Any] | None:
         "hud_message_delete",
         "biden_timer",
         "reload_overlay",
+        "combat_log",
     }:
         return None
+    if payload.get("type") == "combat_log":
+        text = str(payload.get("text") or "").strip()[:200]
+        if not text:
+            return None
+        channel = str(payload.get("channel") or "say")
+        if channel not in {"say", "shout", "whisper"}:
+            channel = "say"
+        speaker = str(payload.get("speaker") or "gm").strip().lower()
+        return {"version": 1, "type": "combat_log", "speaker": speaker, "text": text, "channel": channel}
     if payload.get("type") == "reload_overlay":
         return {
             "version": 1,
@@ -657,6 +667,7 @@ class OverlayRequestHandler(BaseHTTPRequestHandler):
     def _send_config(self) -> None:
         payload = {
             "snakeEnabled": bool(getattr(self.server, "snake_enabled", True)),
+            "logOnly": bool(getattr(self.server, "log_only", False)),
         }
         data = ("window.OVERLAY_CONFIG = " + json.dumps(payload, separators=(",", ":")) + ";\n").encode("utf-8")
         self.send_response(200)
@@ -737,6 +748,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fruit-interval-seconds", type=float, default=20.0)
     parser.add_argument("--no-auto-reload", action="store_true")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--log-only", action="store_true", help="Show only the combat log; disable all other overlay elements.")
     return parser.parse_args()
 
 
@@ -750,12 +762,13 @@ def main() -> int:
         daemon=True,
     )
     udp_thread.start()
-    if args.demo_clicks:
+    if args.demo_clicks and not args.log_only:
         threading.Thread(target=run_demo_loop, args=(stop_event, 0.9), daemon=True).start()
 
     server = ReusableThreadingHTTPServer((args.host, args.port), OverlayRequestHandler)
     server.quiet = args.quiet
-    server.snake_enabled = not args.no_snake
+    server.snake_enabled = not args.no_snake and not args.log_only
+    server.log_only = args.log_only
     if not args.no_auto_reload:
         threading.Thread(
             target=run_overlay_reload_watch_loop,
@@ -763,13 +776,13 @@ def main() -> int:
             daemon=True,
             name="overlay-reload-watch",
         ).start()
-    if args.bidens > 0:
+    if args.bidens > 0 and not args.log_only:
         threading.Thread(
             target=run_periodic_biden_loop,
             args=(stop_event, float(args.bidens)),
             daemon=True,
         ).start()
-    if args.worms > 0:
+    if args.worms > 0 and not args.log_only:
         threading.Thread(
             target=run_periodic_worm_loop,
             args=(stop_event, float(args.worms)),

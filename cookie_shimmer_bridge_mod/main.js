@@ -1657,6 +1657,7 @@ Game.registerMod("shimmer bridge", {
 				bulk10: getRectBySelectors(["#storeBulk10"]),
 				bulk100: getRectBySelectors(["#storeBulk100"]),
 				bulkMax: getRectBySelectors(["#storeBulkMax"]),
+				buyAllButton: getRectBySelectors(["#storeBuyAllButton"]),
 				productsViewport: getProductsViewport(),
 				sections: {
 					products: {

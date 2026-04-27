@@ -132,6 +132,20 @@ class OverlayEventEmitter:
             "updated_at_ms": int(round(time.time() * 1000)),
         })
 
+    def send_combat_log(self, text: str, *, channel: str = "say") -> None:
+        if not self.enabled:
+            return
+        text = str(text or "").strip()
+        if not text:
+            return
+        self.send({
+            "version": 1,
+            "type": "combat_log",
+            "speaker": "gm",
+            "text": text[:200],
+            "channel": channel,
+        })
+
     @staticmethod
     def _minutes_to_ms(value: float | None, *, default_ms: int | None) -> int | None:
         if value is None:

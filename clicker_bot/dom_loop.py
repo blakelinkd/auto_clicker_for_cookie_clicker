@@ -107,6 +107,13 @@ class UpgradeStagePlan:
 
 
 @dataclass(frozen=True)
+class BuyAllUpgradesAction:
+    kind: str = "click_buy_all_upgrades"
+    screen_x: int = 0
+    screen_y: int = 0
+
+
+@dataclass(frozen=True)
 class AscensionStagePlan:
     action: Any = None
     store_action: Any = None
@@ -320,6 +327,18 @@ class DomActionPlanner:
             if upgrade_store_action is not None and upgrade_store_action.kind == "store_ready":
                 upgrade_store_action = None
             return UpgradeStagePlan(upgrade_store_action=upgrade_store_action)
+        affordable = int(upgrade_diag.get("affordable") or 0)
+        if affordable >= 5 and isinstance(store_state, dict):
+            buy_all_rect = store_state.get("buyAllButton")
+            if isinstance(buy_all_rect, dict):
+                target = self._normalize_store_target(buy_all_rect, to_screen_point)
+                if target is not None:
+                    return UpgradeStagePlan(
+                        upgrade_action=BuyAllUpgradesAction(
+                            screen_x=int(target[0]),
+                            screen_y=int(target[1]),
+                        )
+                    )
         return UpgradeStagePlan(
             upgrade_action=self._plan_upgrade_buy(
                 snapshot,
@@ -511,6 +530,20 @@ class DomActionPlanner:
             garden_diag,
         )
         return MinigameStorePlan(owner=owner, store_action=store_action)
+
+    @staticmethod
+    def _normalize_store_target(rect, to_screen_point):
+        if not isinstance(rect, dict):
+            return None
+        x = rect.get("clickX")
+        y = rect.get("clickY")
+        if x is None:
+            x = rect.get("centerX")
+        if y is None:
+            y = rect.get("centerY")
+        if x is None or y is None:
+            return None
+        return to_screen_point(int(x), int(y))
 
 
 class DomAttemptTracker:
@@ -2917,6 +2950,7 @@ class DomActionExecutor:
         main_click_suppress_seconds: float,
         suppress_main_click_until_getter: Callable[[], float],
         suppress_main_click_until_setter: Callable[[float], None],
+        combat_log_sender: Callable[..., None] | None = None,
     ):
         self._log = log
         self._click_lock = click_lock
@@ -2939,6 +2973,18 @@ class DomActionExecutor:
         self._main_click_suppress_seconds = main_click_suppress_seconds
         self._get_suppress_main_click_until = suppress_main_click_until_getter
         self._set_suppress_main_click_until = suppress_main_click_until_setter
+        self._combat_log_sender = combat_log_sender
+
+    def _send_combat_log(self, text: str, *, channel: str = "say") -> None:
+        if self._combat_log_sender is None:
+            return
+        try:
+            self._combat_log_sender(text, channel=channel)
+        except Exception as exc:
+            try:
+                self._log.debug(f"Combat log send failed: {exc}")
+            except Exception:
+                pass
 
     def execute_lump_action(self, lump_diag: dict[str, Any], now: float) -> float | None:
         if not self._can_interact_with_game(now):
@@ -3068,6 +3114,7 @@ class DomActionExecutor:
         else:
             self._set_runtime(last_spell_cast=f"{spell_action.name} ({spell_action.reason})")
             self._record_event(f"Spell cast {spell_action.name} reason={spell_action.reason}")
+            self._send_combat_log(f"Cast {spell_action.name}", channel="shout")
         action_at = self._time_monotonic()
         self._sleep(self._feed_poll_interval)
         return action_at
@@ -3100,6 +3147,8 @@ class DomActionExecutor:
         garden_recorder.record_action(garden_action)
         self._set_runtime(last_garden_action=garden_action.detail or garden_action.kind)
         self._record_event(f"Garden action {garden_action.detail or garden_action.kind}")
+        if garden_action.kind not in {"open_garden", "focus_garden", "select_seed"}:
+            self._send_combat_log(f"Farm: {garden_action.detail or garden_action.kind}")
         self._sleep(self._feed_poll_interval)
         return True
 
@@ -3140,6 +3189,12 @@ class DomActionExecutor:
                 f"store_mode={upgrade_store_action.current_store_mode}->{upgrade_store_action.store_mode} "
                 f"store_bulk={upgrade_store_action.current_store_bulk}->{upgrade_store_action.store_bulk} "
                 f"screen=({upgrade_store_action.screen_x},{upgrade_store_action.screen_y})"
+            )
+        elif getattr(upgrade_action, "kind", None) == "click_buy_all_upgrades":
+            self._log.info(
+                f"Executing buy all upgrades "
+                f"affordable={upgrade_diag.get('affordable')} "
+                f"screen=({upgrade_action.screen_x},{upgrade_action.screen_y})"
             )
         else:
             self._log.info(
@@ -3195,6 +3250,10 @@ class DomActionExecutor:
         }
         if upgrade_store_action is not None:
             self._set_runtime(last_trade_action=f"prepare upgrades {upgrade_store_action.kind}")
+        elif getattr(upgrade_action, "kind", None) == "click_buy_all_upgrades":
+            self._set_runtime(last_trade_action="buy all upgrades")
+            self._record_event("Buy all upgrades")
+            self._send_combat_log("Bought all upgrades")
         elif upgrade_action.kind == "click_upgrade":
             upgrade_attempt_tracker["candidate_id"] = int(upgrade_diag.get("candidate_id"))
             upgrade_attempt_tracker["candidate_signature"] = upgrade_signature
@@ -3213,6 +3272,7 @@ class DomActionExecutor:
             )
             self._set_runtime(last_trade_action=f"upgrade {upgrade_diag.get('candidate')}")
             self._record_event(f"Upgrade buy {upgrade_diag.get('candidate')}")
+            self._send_combat_log(f"Bought {upgrade_diag.get('candidate')}")
         elif upgrade_action.kind == "focus_store_section":
             result["last_upgrade_focus_signature"] = upgrade_signature
             result["last_upgrade_focus_at"] = action_at
@@ -3415,6 +3475,16 @@ class DomActionExecutor:
                 else f"{trade_action.kind} {trade_action.good_name}"
             )
         )
+        if trade_action.kind == "buy":
+            shares = getattr(trade_action, "shares", 1)
+            self._send_combat_log(f"Bank: Bought {shares}x {trade_action.good_name}")
+        elif trade_action.kind == "sell":
+            shares = getattr(trade_action, "shares", 1)
+            self._send_combat_log(f"Bank: Sold {shares}x {trade_action.good_name}")
+        elif trade_action.kind == "hire_broker":
+            self._send_combat_log("Bank: Hired broker")
+        elif trade_action.kind == "upgrade_office":
+            self._send_combat_log("Bank: Upgraded office")
         action_at = self._time_monotonic()
         self._sleep(self._feed_poll_interval)
         return action_at
@@ -3497,6 +3567,8 @@ class DomActionExecutor:
                     f"backoff_seconds={building_stuck_signature_suppress_seconds:.1f}"
                 )
             self._set_runtime(last_building_action=f"{building_action.building_name}")
+            qty = building_action.quantity if building_action.quantity is not None else 1
+            self._send_combat_log(f"Bought {qty}x {building_action.building_name}")
         elif store_action.kind in {"set_store_mode", "set_store_bulk"}:
             self._set_runtime(last_building_action=f"prepare store {store_action.kind}")
         self._sleep(self._feed_poll_interval)

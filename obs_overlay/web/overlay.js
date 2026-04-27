@@ -3,8 +3,8 @@
 
   const canvas = document.getElementById("overlay");
   const ctx = canvas.getContext("2d");
-  const config = Object.assign({ snakeEnabled: true }, window.OVERLAY_CONFIG || {});
-  const assetVersion = "snake-heat-worm-44";
+  const config = Object.assign({ snakeEnabled: true, logOnly: false }, window.OVERLAY_CONFIG || {});
+  const assetVersion = "snake-heat-worm-45";
   const bidenSprite = new Image();
   const grandmaHeadSprite = new Image();
   const fakeCursorSprite = new Image();
@@ -14,12 +14,15 @@
     grandma: createAudioPool(`/assets/audio/grandma_cookie.mp3?v=${assetVersion}`, 0.45, 4),
     poop: createAudioPool(`/assets/audio/farting_sound.mp3?v=${assetVersion}`, 0.55, 8),
     chomp: createAudioPool(`/assets/audio/chomp_sound_effect.mp3?v=${assetVersion}`, 0.48, 6),
+    flyZap: createAudioPool(`/assets/audio/fly_zap.mp3?v=${assetVersion}`, 0.5, 10),
     // Disabled until fly_buzz.mp3 is replaced; the current file is the same scream as grandma_cookie.mp3.
     fly: null,
   };
-  let flySoundActive = false;
-  const bidenSpawns = [];
-  const bidenSpawnByShimmerId = new Map();
+   let flySoundActive = false;
+   let animationFrameId = null;
+   let events = null;
+   const bidenSpawns = [];
+   const bidenSpawnByShimmerId = new Map();
 
   const fingerAnchor = { x: 0.0071, y: 0.1389 };
   const defaultBidenHeight = 320;
@@ -36,6 +39,12 @@
   const enrageMeterMaxBidens = 15;
   const babyGrandmaDrawScale = 0.62;
   const babyGrandmaSpeedMultiplier = 0.84;
+  const superGrandmaPoopChance = 0.3;
+  const superGrandmaDrawScale = 1.28;
+  const superGrandmaSpeedMultiplier = 1.2;
+  const grandmaMaxHp = 150;
+  const grandmaMaxCount = 30; // maximum total grandmas (including main snake)
+  const flyMaxCount = 60; // maximum total flies
   const bidenEatRadius = cellSize * 1.08;
   const bidenCloseRange = cellSize * 3.2;
   const bidenWaypointLimit = 10;
@@ -47,6 +56,7 @@
   const fakeCursorMaxPathMs = 7200;
   const poopFrameCount = 6;
   const poopDropIntervalMs = 20000;
+  const grandmaSpawnSpacingMs = 1500;
   const poopAnimationFrameMs = 120;
   const poopGrowDurationMs = 850;
   const poopStartScale = 0.2;
@@ -62,24 +72,29 @@
   const poopSleepLinearSpeed = 10;
   const poopSleepAngularSpeed = 0.16;
   const poopSleepDelayMs = 650;
-  const wormSpawnEveryPoops = 5;
+  const wormSpawnEveryPoops = 1;
   const wormBaseScale = 1.08;
-  const wormCrawlSpeed = 74;
+  const wormCrawlSpeed = 100;
   const wormInchwormArch = 7;
   const wormInchwormContract = 0.12;
   const wormGroundMargin = 3;
   const wormGroundReach = 28;
   const wormPatrolMargin = 28;
-  const wormEatDurationMs = 3200;
+  const wormEatDurationMs = 2000;
   const wormCrunchIntervalMs = 520;
   const wormHeadShakeSize = 3.5;
   const wormGrowthMultiplier = 1.12;
   const wormMaxScale = 1.42;
-  const wormPoopsToFly = 3;
+  const wormPoopsToFly = 10;
   const wormRigScale = wormBaseScale;
   const wormDissolveDurationMs = 5000;
+  const poopTimeToLiveMs = 2 * 60 * 1000; // 2 minutes
+  const poopDissolveDurationMs = wormDissolveDurationMs;
+  const superSnakeSpawnTimeoutMs = 3 * 60 * 1000; // 3 minutes
   const wormPoopClaimTimeoutMs = 2500;
-  const maxWorms = 6;
+  const wormMaxTargetHorizontalSpeed = 20;
+  const wormDirectionChangeCooldownMs = 200;
+  const wormDirectionDeadZone = 10;
   const flySpriteScale = 1.08;
   const flyStartScale = 0.125;
   const flyGrowDurationMs = 300000;
@@ -89,7 +104,22 @@
   const flyMaxFlightMs = 5000;
   const flySpeed = 180;
   const flyPatrolMargin = 40;
+  const flyLifetimeMs = 24 * 60 * 60 * 1000;
+  const flyCorpseDeleteMs = 3 * 60 * 1000;
+  const flyZapDamage = 20;
+  const flyZapRange = 620;
+  const flyZapDurationMs = 130;
+  const flyZapMinCooldownMs = 1275;
+  const flyZapMaxCooldownMs = 2475;
+  const flyZapColors = [
+    { beam: "rgba(255, 38, 38, 0.9)", core: "rgba(255, 220, 220, 0.95)", ball: "rgba(255, 96, 96, 0.95)" },
+    { beam: "rgba(42, 144, 255, 0.9)", core: "rgba(210, 236, 255, 0.95)", ball: "rgba(98, 188, 255, 0.95)" },
+    { beam: "rgba(255, 126, 30, 0.9)", core: "rgba(255, 230, 190, 0.95)", ball: "rgba(255, 170, 74, 0.95)" },
+    { beam: "rgba(255, 226, 34, 0.9)", core: "rgba(255, 252, 190, 0.95)", ball: "rgba(255, 244, 94, 0.95)" },
+  ];
   const twitchChatQuipIntervalMs = 180000;
+  const gmGithubQuip = "Want to try the auto-clicker? github.com/blakelinkd/auto_clicker_for_cookie_clicker";
+  const gmGithubQuipIntervalMs = 300000;
   const defaultHudMessageTtlMs = 4000;
   const snake = {
     mode: "heat",
@@ -111,6 +141,9 @@
     enrageEndedAt: 0,
     enrageDuration: 15000,
     enrageEatenThreshold: 15,
+    maxHp: grandmaMaxHp,
+    hp: grandmaMaxHp,
+    dead: false,
     heatTargeting: false,
     heatStuckSample: null,
     heatStuckSince: 0,
@@ -138,15 +171,21 @@
   };
   let lastDurgularYell = 0;
   let lastTwitchChatQuip = 0;
+  let lastGmGithubQuip = 0;
   let lastGrandmaPoopAt = 0;
+  let lastGrandmaSpawnTime = 0; // timestamp of last grandma spawn (any type) for spacing
   let totalGrandmaPoopsSpawned = 0;
   let pendingPoopWormSpawns = 0;
+  let pendingWormBecomingSuperGrandma = false;
+  let lastHungrySuperGrandmaSpawn = 0;
+  let lastGrandmaSnakeGoneAt = 0;
   let bidenSpawnCount = 0;
   let nextPoopWormId = 1;
   let wormSprite = null;
   let flySprite = null;
   let flyManifest = null;
   const flies = [];
+  const flyZaps = [];
   const biotachyonicWhisper = "it's supposed to look like biden is popping the cookies...";
   const twitchChatQuip = "Feel free to point out any bugs, make suggestions or request in the twitch chat!";
   const bidenFocusLines = [
@@ -170,6 +209,7 @@
     grandma: [135, 136, 238],
     biotachyonic: [255, 124, 10],
     fakecursor: [63, 199, 235],
+    gm: [255, 200, 30],
   };
   const durgularLines = [
     "DURGULAAAAAR!",
@@ -280,6 +320,9 @@
     snake.heatStuckSample = null;
     snake.heatStuckSince = 0;
     snake.heatRecoveryUntil = 0;
+    snake.maxHp = grandmaMaxHp;
+    snake.hp = grandmaMaxHp;
+    snake.dead = false;
     babyGrandmaSnakes.length = 0;
     lastGrandmaPoopAt = snake.lastTick;
   }
@@ -427,6 +470,17 @@
     lastTwitchChatQuip = now;
   }
 
+  function maybeAddGmGithubQuip(now) {
+    if (lastGmGithubQuip === 0) {
+      lastGmGithubQuip = now;
+      addCombatLogLine("gm", gmGithubQuip, now, "say");
+      return;
+    }
+    if (now - lastGmGithubQuip < gmGithubQuipIntervalMs) return;
+    addCombatLogLine("gm", gmGithubQuip, now, "say");
+    lastGmGithubQuip = now;
+  }
+
   function refreshBidenCells() {
     for (const spawn of bidenSpawns) {
       spawn.cell = targetToCell(spawn.normX, spawn.normY);
@@ -446,7 +500,7 @@
     }
     if (payload.type === "spawn_worm") {
       queuePoopWormSpawn(performance.now());
-      return;
+      // return;
     }
     if (payload.type === "play_sound") {
       if (payload.sound === "dean") playSound(sounds.dean);
@@ -536,6 +590,7 @@
   }
 
   function addCombatLogLine(speaker, text, now, channel = "say") {
+    if (config.logOnly && speaker !== "gm") return;
     combatLog.push({ speaker, text, startedAt: now, channel });
     while (combatLog.length > 18) {
       combatLog.shift();
@@ -609,6 +664,7 @@
     spawn.eatenAt = now;
     snake.eatenCount += 1;
     maybeAddFakeCursorEatQuip(now);
+    snake.hp = Math.min(snake.maxHp, snake.hp + 25);
     if (!isEnraged(now)) {
       snake.enrageEatenCount = Math.min(snake.enrageEatenThreshold, snake.enrageEatenCount + 1);
     }
@@ -636,6 +692,7 @@
   }
 
   function updateEnrageState(now) {
+    if (snake.dead) return;
     if (!snake.enraged) return;
     if (now < snake.enrageStart + snake.enrageDuration) return;
     snake.enraged = false;
@@ -647,6 +704,10 @@
   }
 
   function spawnBabyGrandmaSnake(now) {
+    const totalGrandmas = (snake.dead ? 0 : 1) + babyGrandmaSnakes.length;
+    if (totalGrandmas >= grandmaMaxCount) return;
+    if (now - lastGrandmaSpawnTime < grandmaSpawnSpacingMs) return;
+    lastGrandmaSpawnTime = now;
     const parentHead = snake.heatSegments[0] || cellToPixel({
       x: Math.floor(gridWidth() / 2),
       y: Math.floor(gridHeight() / 2),
@@ -670,8 +731,45 @@
       heatStuckSince: 0,
       heatRecoveryUntil: 0,
       spawnedAt: now,
+      maxHp: grandmaMaxHp,
+      hp: grandmaMaxHp,
+      dead: false,
     });
     addCombatLogLine("grandma", "A baby Grandma joins the hunt.", now + 150);
+  }
+
+  function spawnBabyGrandmaSnakeFromPoop(origin, direction, now, drawScale) {
+    const totalGrandmas = (snake.dead ? 0 : 1) + babyGrandmaSnakes.length;
+    if (totalGrandmas >= grandmaMaxCount) return;
+    if (now - lastGrandmaSpawnTime < grandmaSpawnSpacingMs) return;
+    lastGrandmaSpawnTime = now;
+    const head = clampHeatPointToViewport(origin);
+    const tailDirection = normalizeVector({
+      x: -direction.x,
+      y: -direction.y,
+    });
+    babyGrandmaSnakes.push({
+      heatSegments: [
+        head,
+        clampHeatPointToViewport({
+          x: head.x + tailDirection.x * cellSize * 0.75,
+          y: head.y + tailDirection.y * cellSize * 0.75,
+        }),
+      ],
+      heatDirection: normalizeVector(direction),
+      lastFrame: now,
+      heatTargeting: false,
+      heatStuckSample: null,
+      heatStuckSince: 0,
+      heatRecoveryUntil: 0,
+      spawnedAt: now,
+      maxHp: grandmaMaxHp,
+      hp: grandmaMaxHp,
+      dead: false,
+      drawScale: drawScale,
+      speedMultiplier: babyGrandmaSpeedMultiplier,
+    });
+    addCombatLogLine("grandma", "A baby Grandma spawns from the poop.", now + 150);
   }
 
   function enrageMovementMultiplier(now) {
@@ -809,22 +907,28 @@
 
   function advanceSnake(now) {
     if (!config.snakeEnabled) return;
-    updateEnrageState(now);
-    enterHeatSeekingMode(now);
-    advanceHeatSeeking(now);
+    if (!snake.dead) {
+      updateEnrageState(now);
+      enterHeatSeekingMode(now);
+      advanceHeatSeeking(now);
+    }
     advanceBabyGrandmaSnakes(now);
     maybeDropGrandmaPoops(now);
     advanceGrandmaPoops(now);
     advancePoopWorms(now);
+    maybeSpawnSuperGrandmaFromHungryWorms(now);
+    updateGrandmaSnakePresence(now);
+    maybeSpawnSuperSnakesDueToTimeout(now);
     manageWormLimit(now);
     advanceFlies(now);
   }
 
   function advanceBabyGrandmaSnakes(now) {
-    for (const baby of babyGrandmaSnakes) {
+    for (const baby of babyGrandmaSnakes.slice()) {
+      if (baby.dead) continue;
       advanceHeatSnake(baby, now, {
         announceTargeting: false,
-        speedMultiplier: babyGrandmaSpeedMultiplier,
+        speedMultiplier: baby.speedMultiplier || babyGrandmaSpeedMultiplier,
       });
     }
   }
@@ -887,7 +991,7 @@
     const dt = Math.min(80, Math.max(0, now - (heatSnake.lastFrame || now)));
     heatSnake.lastFrame = now;
     const head = heatSnake.heatSegments[0];
-    const target = nearestHeatTarget(head);
+    const target = nearestHeatTarget(head, heatSnake);
     if (target && !heatSnake.heatTargeting && options.announceTargeting) {
       addCombatLogLine("grandma", "Heat seeking mode engage!", now);
     }
@@ -899,9 +1003,9 @@
     const speed = (cellSize / snakeTickMs) * enrageMovementMultiplier(now) * (options.speedMultiplier || 1);
     const maxStep = speed * dt;
     const sizes = segmentSizeMultipliers(heatSnake.heatSegments.length);
-    const targetPoint = target ? bidenCenter(target) : null;
+    const targetPoint = target ? heatTargetPoint(target) : null;
     let desired = target
-      ? vectorToward(head, bidenCenter(target))
+      ? vectorToward(head, targetPoint)
       : heatSnake.heatDirection;
 
     if (!target) {
@@ -931,11 +1035,11 @@
   }
 
   function eatHeatTargetIfReached(heatSnake, head, target, now) {
-    if (!target || target.beingEaten) return false;
-    if (bidenHitDistance(head, target) > bidenEatRadius) return false;
+    if (!target || heatTargetBeingEaten(target)) return false;
+    if (heatTargetDistance(head, target) > bidenEatRadius) return false;
     const tail = heatSnake.heatSegments[heatSnake.heatSegments.length - 1] || head;
     heatSnake.heatSegments.push({ x: tail.x, y: tail.y });
-    handleBidenEaten(target, now);
+    handleHeatTargetEaten(target, now);
     return true;
   }
 
@@ -996,19 +1100,66 @@
     clampHeatSegmentsToViewport(heatSnake);
   }
 
-  function nearestHeatTarget(head) {
+  function nearestHeatTarget(head, heatSnake = snake) {
     const activeBidens = activeBidenSpawns();
-    if (activeBidens.length === 0) return null;
-    let best = activeBidens[0];
-    let bestDistance = pixelDistance(head, bidenCenter(best));
-    for (let i = 1; i < activeBidens.length; i += 1) {
-      const distance = pixelDistance(head, bidenCenter(activeBidens[i]));
+    let best = null;
+    let bestDistance = Infinity;
+    for (const spawn of activeBidens) {
+      const distance = pixelDistance(head, bidenCenter(spawn));
       if (distance < bestDistance) {
-        best = activeBidens[i];
+        best = spawn;
         bestDistance = distance;
       }
     }
+    if (heatSnake && heatSnake.canEatFlies) {
+      for (const fly of flies) {
+        if (fly.state === "falling" || fly.state === "fallen" || fly.beingEaten) continue;
+        const distance = pixelDistance(head, fly);
+        if (distance < bestDistance) {
+          best = { kind: "fly", fly };
+          bestDistance = distance;
+        }
+      }
+    }
     return best;
+  }
+
+  function heatTargetPoint(target) {
+    if (target && target.kind === "fly") {
+      return { x: target.fly.x, y: target.fly.y };
+    }
+    return bidenCenter(target);
+  }
+
+  function heatTargetDistance(point, target) {
+    if (target && target.kind === "fly") {
+      return pixelDistance(point, target.fly);
+    }
+    return bidenHitDistance(point, target);
+  }
+
+  function heatTargetBeingEaten(target) {
+    if (target && target.kind === "fly") {
+      return Boolean(target.fly.beingEaten);
+    }
+    return Boolean(target && target.beingEaten);
+  }
+
+  function handleHeatTargetEaten(target, now) {
+    if (target && target.kind === "fly") {
+      handleFlyEaten(target.fly, now);
+      return;
+    }
+    handleBidenEaten(target, now);
+  }
+
+  function handleFlyEaten(fly, now) {
+    if (!fly || fly.beingEaten) return;
+    fly.beingEaten = true;
+    const index = flies.indexOf(fly);
+    if (index >= 0) flies.splice(index, 1);
+    playSound(sounds.grandma);
+    addCombatLogLine("grandma", "Super Grandma ate a fly.", now);
   }
 
   function bidenHitDistance(point, spawn) {
@@ -1698,12 +1849,39 @@
 
   function maybeDropGrandmaPoops(now) {
     if (!lastGrandmaPoopAt) lastGrandmaPoopAt = now;
-    if (now - lastGrandmaPoopAt < poopDropIntervalMs) return;
+    
+    // Super grandmas poop three times as often
+    const superGrandmas = babyGrandmaSnakes.filter(b => b.drawScale > babyGrandmaDrawScale);
+    const dropInterval = superGrandmas.length > 0 ? poopDropIntervalMs / 3 : poopDropIntervalMs;
+    if (now - lastGrandmaPoopAt < dropInterval) return;
     lastGrandmaPoopAt = now;
 
-    spawnGrandmaPoop(snake, now, 1);
+    const hasGrandmas = !snake.dead || babyGrandmaSnakes.length > 0;
+    if (!hasGrandmas && !pendingWormBecomingSuperGrandma) {
+      const canSummonWorm = totalGrandmaPoopsSpawned > 0 && totalGrandmaPoopsSpawned % wormSpawnEveryPoops === 0;
+      const hasPoop = grandmaPoops.length > 0;
+      if (!canSummonWorm || !hasPoop) {
+        queuePoopWormSpawn(now);
+        pendingWormBecomingSuperGrandma = true;
+      }
+    }
+
+    if (!snake.dead) {
+      spawnGrandmaPoop(snake, now, 1);
+    }
     for (const baby of babyGrandmaSnakes) {
-      spawnGrandmaPoop(baby, now, babyGrandmaDrawScale);
+      if (baby.dead) continue;
+      spawnGrandmaPoop(baby, now, baby.drawScale || babyGrandmaDrawScale);
+    }
+
+    const poopsThisTick = (snake.dead ? 0 : 1) + babyGrandmaSnakes.filter(b => !b.dead).length;
+    const prevTotal = totalGrandmaPoopsSpawned;
+    totalGrandmaPoopsSpawned += poopsThisTick;
+    for (let i = prevTotal + 1; i <= totalGrandmaPoopsSpawned; i++) {
+      if (i % wormSpawnEveryPoops === 0) {
+        queuePoopWormSpawn(now);
+        break;
+      }
     }
   }
 
@@ -1721,6 +1899,21 @@
     const startX = tail.x + tailDirection.x * tailRadius * 0.65;
     const startY = tail.y + tailDirection.y * tailRadius * 0.65;
 
+    const hasGrandmas = !snake.dead || babyGrandmaSnakes.length > 0;
+    const isFinalPoop = grandmaPoops.length === 0 && !hasGrandmas;
+    const isSuperGrandma = drawScale > babyGrandmaDrawScale;
+    const isGrandmaEnraged = isSuperGrandma && isEnraged(now);
+    if (isFinalPoop || (!isSuperGrandma && Math.random() < superGrandmaPoopChance) || isGrandmaEnraged) {
+      const onlySuperGrandma = !isSuperGrandma && babyGrandmaSnakes.length > 0 && babyGrandmaSnakes.every(b => b.drawScale > babyGrandmaDrawScale);
+      if (isGrandmaEnraged && !isFinalPoop && (Math.random() < 0.5 || onlySuperGrandma)) {
+        spawnSuperGrandmaSnake({ x: startX, y: startY }, tailDirection, now);
+      } else {
+        spawnBabyGrandmaSnakeFromPoop({ x: startX, y: startY }, tailDirection, now, drawScale);
+      }
+      playSound(sounds.poop);
+      return true;
+    }
+
     grandmaPoops.push({
       x: startX,
       y: startY,
@@ -1735,15 +1928,69 @@
       eatShake: 0,
       beingEaten: false,
       floorContactSince: 0,
+      dissolving: false,
+      dissolveStartedAt: 0,
+      dissolveProgress: 0,
+      dissolveScale: 1,
     });
     if (grandmaPoops.length > 80) grandmaPoops.shift();
-    totalGrandmaPoopsSpawned += 1;
-    if (totalGrandmaPoopsSpawned % wormSpawnEveryPoops === 0) {
-      queuePoopWormSpawn(now);
-    }
     playSound(sounds.poop);
     return true;
   }
+
+  function spawnSuperGrandmaSnake(origin, direction, now) {
+    const totalGrandmas = (snake.dead ? 0 : 1) + babyGrandmaSnakes.length;
+    if (totalGrandmas >= grandmaMaxCount) return false;
+    if (now - lastGrandmaSpawnTime < grandmaSpawnSpacingMs) return false;
+    // Limit to 2 super grandmas at a time
+    const superGrandmas = babyGrandmaSnakes.filter(b => b.drawScale > babyGrandmaDrawScale);
+    if (superGrandmas.length >= 2) return false;
+    
+    lastGrandmaSpawnTime = now;
+    const head = clampHeatPointToViewport(origin);
+    const tailDirection = normalizeVector({
+      x: -direction.x,
+      y: -direction.y,
+    });
+    babyGrandmaSnakes.push({
+      heatSegments: [
+        head,
+        clampHeatPointToViewport({
+          x: head.x + tailDirection.x * cellSize * 0.75,
+          y: head.y + tailDirection.y * cellSize * 0.75,
+        }),
+      ],
+      heatDirection: normalizeVector(direction),
+      lastFrame: now,
+      heatTargeting: false,
+      heatStuckSample: null,
+      heatStuckSince: 0,
+      heatRecoveryUntil: 0,
+      spawnedAt: now,
+      maxHp: grandmaMaxHp,
+      hp: grandmaMaxHp,
+      dead: false,
+      canEatFlies: true,
+      drawScale: superGrandmaDrawScale,
+      speedMultiplier: superGrandmaSpeedMultiplier,
+    });
+    addCombatLogLine("grandma", "A super Grandma snake bursts from the poop.", now + 150, "shout");
+    return true;
+  }
+
+   function wormBecameSuperGrandmaSnake(worm, now) {
+     if (!pendingWormBecomingSuperGrandma) return false;
+     pendingWormBecomingSuperGrandma = false;
+     const origin = { x: worm.x, y: worm.baselineY - 30 };
+     const direction = { x: worm.direction, y: 0 };
+     // Remove worm from array before spawning super grandma
+     const wormIndex = poopWorms.indexOf(worm);
+     if (wormIndex >= 0) {
+       poopWorms.splice(wormIndex, 1);
+     }
+     spawnSuperGrandmaSnake(origin, direction, now);
+     return true;
+   }
 
   function currentGrandmaSegments(grandmaSnake, now) {
     if (grandmaSnake.heatSegments && grandmaSnake.heatSegments.length > 0) {
@@ -1771,6 +2018,16 @@
   }
 
   function advanceGrandmaPoops(now) {
+    // Start dissolving poops that have exceeded their time to live
+    for (const poop of grandmaPoops) {
+      if (poop.beingEaten || poop.dissolving) continue;
+      if (now - poop.createdAt >= poopTimeToLiveMs) {
+        beginPoopDissolving(poop, now);
+      }
+    }
+
+    updatePoopDissolving(now);
+
     for (const poop of grandmaPoops) {
       const dt = Math.min(100, Math.max(0, now - poop.lastFrameAt));
       poop.lastFrameAt = now;
@@ -2003,7 +2260,7 @@
   }
 
   function poopCurrentSize(poop, now) {
-    return poop.size * grandmaPoopScale(poop, now) * (poop.eatScale == null ? 1 : poop.eatScale);
+    return poop.size * grandmaPoopScale(poop, now) * (poop.eatScale == null ? 1 : poop.eatScale) * (poop.dissolveScale == null ? 1 : poop.dissolveScale);
   }
 
   function queuePoopWormSpawn(now) {
@@ -2026,86 +2283,144 @@
     const length = wormSprite.lengthAtScale(scale);
     const direction = Math.random() < 0.5 ? -1 : 1;
     const left = wormPatrolMargin + Math.random() * Math.max(1, window.innerWidth - wormPatrolMargin * 2 - length);
-    poopWorms.push({
-      id: nextPoopWormId++,
-      x: direction >= 0 ? left : left + length,
-      baselineY: wormSprite.groundBaselineY(groundY, scale),
-      scale,
-      direction,
-      patrolDirection: direction,
-      phase: Math.random() * Math.PI * 2,
-      lastFrameAt: now,
-      targetPoop: null,
-      eatingPoop: null,
-      eatStartedAt: 0,
-      nextCrunchAt: 0,
-      eatingDirection: direction,
-      eatenPoops: 0,
-    });
+     poopWorms.push({
+       id: nextPoopWormId++,
+       spawnedAt: now,
+       x: direction >= 0 ? left : left + length,
+       baselineY: wormSprite.groundBaselineY(groundY, scale),
+       scale,
+       direction,
+       patrolDirection: direction,
+       phase: Math.random() * Math.PI * 2,
+       lastFrameAt: now,
+       lastFailedPoop: null,
+       lastFailedAt: 0,
+       lastAteAt: 0,
+       lastDirectionChangeAt: now,
+       targetPoop: null,
+       eatingPoop: null,
+       eatStartedAt: 0,
+       nextCrunchAt: 0,
+       eatingDirection: direction,
+       eatenPoops: 0,
+     });
     return true;
   }
 
   function advancePoopWorms(now) {
-    if (!wormSprite || !wormSprite.ready) return;
-    spawnPendingPoopWorms(now);
-    for (const worm of poopWorms) {
-      if (worm.dissolving) continue;
-      const dt = Math.min(100, Math.max(0, now - (worm.lastFrameAt || now))) / 1000;
-      worm.lastFrameAt = now;
-      worm.phase += dt * (worm.eatingPoop ? 11.5 : 8.5);
+  if (!wormSprite || !wormSprite.ready) return;
+  spawnPendingPoopWorms(now);
+  
+  for (const worm of poopWorms) {
+    if (worm.dissolving) continue;
+    
+    const dt = Math.min(100, Math.max(0, now - (worm.lastFrameAt || now))) / 1000;
+    worm.lastFrameAt = now;
+    worm.phase += dt * (worm.eatingPoop ? 11.5 : 8.5);
 
-      if (worm.eatingPoop) {
-        advanceWormEating(worm, now);
-        anchorWormToGround(worm, now);
-        continue;
-      }
-
+    if (worm.eatingPoop) {
+      advanceWormEating(worm, now);
       anchorWormToGround(worm, now);
-      const targetPoop = nearestTouchablePoop(worm, now);
-      if (targetPoop && claimWormPoop(worm, targetPoop, now)) {
-        worm.targetPoop = targetPoop;
-      } else {
+      continue;
+    }
+
+    anchorWormToGround(worm, now);
+    
+    // Skip targeting if worm recently finished eating - prevents lockup with other nearby worms
+    if (worm.lastAteAt && now - worm.lastAteAt < 800) {
+      patrolWorm(worm, dt, now);
+      continue;
+    }
+    
+    const targetPoop = nearestTouchablePoop(worm, now);
+    if (targetPoop && claimWormPoop(worm, targetPoop, now)) {
+      worm.targetPoop = targetPoop;
+    } else {
+      releaseWormPoopClaim(worm);
+      worm.targetPoop = null;
+      if (targetPoop) {
+        worm.lastFailedPoop = targetPoop;
+        worm.lastFailedAt = now;
+        // Try to find another poop immediately instead of going to patrol
+        const nextPoop = nearestTouchablePoop(worm, now);
+        if (nextPoop && claimWormPoop(worm, nextPoop, now)) {
+          worm.targetPoop = nextPoop;
+        }
+      }
+    }
+    
+    if (!worm.targetPoop) {
+      patrolWorm(worm, dt, now);
+      continue;
+    }
+
+    // Get mouth position once per frame to avoid phase jitter
+    const pose = wormPose(worm, now);
+    const mouth = wormSprite.mouthPoint(pose);
+    const target = worm.targetPoop;
+    
+    // Calculate distance and direction to target
+    const distanceToTarget = target.x - mouth.x;
+    const stopThreshold = poopCurrentSize(target, now) * 0.4 + 10 * worm.scale;
+    const absoluteDistance = Math.abs(distanceToTarget);
+    
+    // If within eating range, try to eat
+    if (absoluteDistance <= stopThreshold) {
+      if (!startWormEating(worm, target, now)) {
         releaseWormPoopClaim(worm);
         worm.targetPoop = null;
       }
-      if (!worm.targetPoop) {
-        patrolWorm(worm, dt, now);
-        continue;
-      }
-
-      const pose = wormPose(worm, now);
-      const mouth = wormSprite.mouthPoint(pose);
-      const target = worm.targetPoop;
-      worm.direction = target.x >= mouth.x ? 1 : -1;
-      const refreshedPose = wormPose(worm, now);
-      const refreshedMouth = wormSprite.mouthPoint(refreshedPose);
-      const horizontalDistanceToTarget = Math.abs(refreshedMouth.x - target.x);
-      const touchDistance = poopCurrentSize(target, now) * 0.4 + 10 * worm.scale;
-      if (horizontalDistanceToTarget <= touchDistance) {
-        if (!startWormEating(worm, target, now)) {
-          releaseWormPoopClaim(worm);
-          worm.targetPoop = null;
-        }
-        continue;
-      }
-
-      const step = Math.min(wormCrawlSpeed * worm.scale * dt, Math.max(0, horizontalDistanceToTarget - touchDistance));
-      worm.x += worm.direction * step;
+      continue;
     }
+    
+    // Set direction with hysteresis to prevent flipping
+    const desiredDirection = distanceToTarget > 0 ? 1 : -1;
+    const shouldChangeDirection = desiredDirection !== worm.direction
+      && (Math.abs(distanceToTarget) > wormDirectionDeadZone
+          || now - worm.lastDirectionChangeAt >= wormDirectionChangeCooldownMs);
+    if (shouldChangeDirection) {
+      worm.direction = desiredDirection;
+      worm.lastDirectionChangeAt = now;
+    }
+    
+    // Move toward target, but don't overshoot
+    const maxStep = wormCrawlSpeed * worm.scale * dt;
+    const step = Math.min(maxStep, absoluteDistance - stopThreshold);
+    worm.x += worm.direction * step;
   }
+}
 
   function patrolWorm(worm, dt, now) {
     worm.direction = worm.patrolDirection || worm.direction || 1;
+    
+    // If worm recently failed to claim a poop, move away from it
+    if (worm.lastFailedPoop && now - worm.lastFailedAt < 1500) {
+      const mouth = wormSprite.mouthPoint(wormPose(worm, now));
+      const poop = worm.lastFailedPoop;
+      const poopRadius = poopCurrentSize(poop, now) * 0.4;
+      const distanceToPoop = Math.abs(mouth.x - poop.x) - poopRadius;
+      
+      // If still too close to the failed poop, move away from it
+      if (distanceToPoop < wormCrawlSpeed * worm.scale * 2) {
+        const awayFromPoop = mouth.x < poop.x ? -1 : 1;
+        worm.direction = awayFromPoop;
+        worm.lastDirectionChangeAt = now;
+        worm.patrolDirection = awayFromPoop;
+      }
+    }
+    
     worm.x += worm.direction * wormCrawlSpeed * worm.scale * dt * 0.62;
     const bounds = wormDrawBounds(worm, now);
     if (bounds.minX < wormPatrolMargin) {
       worm.x += wormPatrolMargin - bounds.minX;
       worm.patrolDirection = 1;
       worm.direction = 1;
+      worm.lastDirectionChangeAt = now;
     } else if (bounds.maxX > window.innerWidth - wormPatrolMargin) {
       worm.x -= bounds.maxX - (window.innerWidth - wormPatrolMargin);
       worm.patrolDirection = -1;
       worm.direction = -1;
+      worm.lastDirectionChangeAt = now;
     }
   }
 
@@ -2113,18 +2428,22 @@
     let best = null;
     let bestDistance = Infinity;
     const mouth = wormSprite.mouthPoint(wormPose(worm, now));
+    const recentlyFailedPoop = worm.lastFailedPoop && now - worm.lastFailedAt < 500 ? worm.lastFailedPoop : null;
     for (const poop of grandmaPoops) {
       if (poop.beingEaten) continue;
       if (poop.eatScale != null && poop.eatScale <= 0.05) continue;
       if (!poopIsGroundedForWorm(poop, now)) continue;
       if (poopClaimedByOtherWorm(poop, worm, now)) continue;
+      if (poop === recentlyFailedPoop) continue;
       const poopRadius = poopCurrentSize(poop, now) * 0.4;
       const verticalReach = Math.abs(wormGroundY() - poopFloorBottom(poop, now));
       if (verticalReach > wormGroundReach * worm.scale) continue;
       const distance = Math.abs(mouth.x - poop.x) - poopRadius;
-      if (distance < bestDistance) {
+      // Add small random factor to prevent all worms from choosing the exact same poop
+      const adjustedDistance = distance * (0.95 + Math.random() * 0.1);
+      if (adjustedDistance < bestDistance) {
         best = poop;
-        bestDistance = distance;
+        bestDistance = adjustedDistance;
       }
     }
     return best;
@@ -2141,14 +2460,25 @@
       clearPoopClaim(poop);
       return false;
     }
+    // Also check if the owner is already eating this poop
+    if (owner.eatingPoop === poop) {
+      return true;
+    }
     return true;
   }
 
   function claimWormPoop(worm, poop, now) {
-    if (!poop || poop.beingEaten || poopClaimedByOtherWorm(poop, worm, now)) return false;
+    if (!poop || poop.beingEaten || poop.dissolving || poopClaimedByOtherWorm(poop, worm, now)) return false;
     if (worm.targetPoop && worm.targetPoop !== poop) {
       releaseWormPoopClaim(worm);
     }
+    
+    // If already claimed by another worm, this worm MUST look elsewhere - no tiebreaker
+    // This ensures only one worm targets a poop at a time
+    if (poop.claimedByWormId != null && poop.claimedByWormId !== worm.id) {
+      return false;
+    }
+    
     poop.claimedByWormId = worm.id;
     poop.claimedAt = now;
     worm.targetPoop = poop;
@@ -2178,6 +2508,7 @@
     return contactAge >= 180
       && poop.vy >= -poopSleepLinearSpeed * 1.8
       && linearSpeed <= wormCrawlSpeed * 0.9
+      && Math.abs(poop.vx) <= wormMaxTargetHorizontalSpeed
       && Math.abs(poop.angularVelocity) <= poopSleepAngularSpeed * 5;
   }
 
@@ -2222,7 +2553,29 @@
     worm.targetPoop = null;
     worm.eatStartedAt = 0;
     worm.patrolDirection = worm.direction;
+    worm.lastAteAt = now;
+    
+    const superGrandmas = babyGrandmaSnakes.filter(b => b.drawScale > babyGrandmaDrawScale);
+    const hasSuperGrandma = superGrandmas.length > 0;
+    
+    // If there's a super grandma, worm eats 1 poop → spawns a fly (never becomes super grandma)
+    if (hasSuperGrandma) {
+      beginWormDissolving(worm, now);
+      pendingWormBecomingSuperGrandma = false;
+      return;
+    }
+    
+    // No super grandma - normal behavior
+    if (pendingWormBecomingSuperGrandma && worm.eatenPoops === 1) {
+      if (wormBecameSuperGrandmaSnake(worm, now)) {
+        return;
+      }
+    }
     if (worm.eatenPoops >= wormPoopsToFly) {
+      if (wormBecameSuperGrandmaSnake(worm, now)) {
+        return;
+      }
+      pendingWormBecomingSuperGrandma = false;
       beginWormDissolving(worm, now);
     }
   }
@@ -2276,11 +2629,108 @@
     }
   }
 
-  function manageWormLimit(now) {
-    const activeWorms = poopWorms.filter((w) => !w.dissolving);
-    if (activeWorms.length <= maxWorms) return;
-    const oldestWorm = activeWorms[0];
-    beginWormDissolving(oldestWorm, now);
+    function manageWormLimit(now) {
+      const maxWorms = 20;
+      if (poopWorms.length <= maxWorms) return;
+      
+      // Collect worms that are not dissolving and not currently eating
+      const candidates = [];
+      for (let i = 0; i < poopWorms.length; i++) {
+        const worm = poopWorms[i];
+        if (!worm.dissolving && !worm.eatingPoop) {
+          candidates.push({ index: i, worm, spawnedAt: worm.spawnedAt || now });
+        }
+      }
+      
+      // Sort by spawnedAt (oldest first)
+      candidates.sort((a, b) => a.spawnedAt - b.spawnedAt);
+      
+      // Remove oldest worms until under limit
+      let toRemove = poopWorms.length - maxWorms;
+      for (let i = 0; i < candidates.length && toRemove > 0; i++) {
+        const candidate = candidates[i];
+        // Release any poop claim before removal
+        releaseWormPoopClaim(candidate.worm);
+        poopWorms.splice(candidate.index, 1);
+        // Adjust indices for subsequent removals
+        for (let j = i + 1; j < candidates.length; j++) {
+          if (candidates[j].index > candidate.index) {
+            candidates[j].index--;
+          }
+        }
+        toRemove--;
+      }
+    }
+
+  function countAvailablePoopsForWorms(now) {
+    let count = 0;
+    const dummyWorm = { id: -1 };
+    for (const poop of grandmaPoops) {
+      if (poop.beingEaten) continue;
+      if (poop.dissolving) continue;
+      if (poop.eatScale != null && poop.eatScale <= 0.05) continue;
+      if (!poopIsGroundedForWorm(poop, now)) continue;
+      if (poopClaimedByOtherWorm(poop, dummyWorm, now)) continue;
+      count++;
+    }
+    return count;
+  }
+
+  function maybeSpawnSuperGrandmaFromHungryWorms(now) {
+    // Count only active worms (not dissolving)
+    const activeWorms = poopWorms.filter(w => !w.dissolving);
+    if (activeWorms.length === 0) return;
+    if (!snake.dead || babyGrandmaSnakes.length > 0) return;
+    
+    // Cooldown to prevent rapid attempts
+    if (now - lastHungrySuperGrandmaSpawn < 10000) return;
+    
+    const availablePoops = countAvailablePoopsForWorms(now);
+    if (availablePoops > 0) return;
+    
+    // Limit to 1 super grandma at a time
+    const superGrandmas = babyGrandmaSnakes.filter(b => b.drawScale > babyGrandmaDrawScale);
+    if (superGrandmas.length > 0) return;
+    
+    // Spawn a super grandma at a random position
+    const margin = 100;
+    const x = margin + Math.random() * (window.innerWidth - margin * 2);
+    const y = margin + Math.random() * (window.innerHeight - margin * 2);
+    const direction = { x: Math.random() - 0.5, y: Math.random() - 0.5 };
+    if (spawnSuperGrandmaSnake({ x, y }, direction, now)) {
+      lastHungrySuperGrandmaSpawn = now;
+      pendingWormBecomingSuperGrandma = false;
+    }
+  }
+
+  function updateGrandmaSnakePresence(now) {
+    const grandmaCount = (snake.dead ? 0 : 1) + babyGrandmaSnakes.length;
+    if (grandmaCount === 0) {
+      if (lastGrandmaSnakeGoneAt === 0) {
+        lastGrandmaSnakeGoneAt = now;
+      }
+    } else {
+      lastGrandmaSnakeGoneAt = 0;
+    }
+  }
+
+  function maybeSpawnSuperSnakesDueToTimeout(now) {
+    if (lastGrandmaSnakeGoneAt === 0) return;
+    if (now - lastGrandmaSnakeGoneAt < superSnakeSpawnTimeoutMs) return;
+    
+    // Spawn 2 super snakes, respecting limit of 2 super grandmas total
+    const margin = 100;
+    const superGrandmas = babyGrandmaSnakes.filter(b => b.drawScale > babyGrandmaDrawScale);
+    const needed = 2 - superGrandmas.length;
+    if (needed <= 0) return;
+    
+    for (let i = 0; i < needed; i++) {
+      const x = margin + Math.random() * (window.innerWidth - margin * 2);
+      const y = margin + Math.random() * (window.innerHeight - margin * 2);
+      const direction = { x: Math.random() - 0.5, y: Math.random() - 0.5 };
+      spawnSuperGrandmaSnake({ x, y }, direction, now);
+    }
+    lastGrandmaSnakeGoneAt = 0; // Reset to avoid repeated spawning
   }
 
   function beginWormDissolving(worm, now) {
@@ -2308,8 +2758,30 @@
     }
   }
 
+  function beginPoopDissolving(poop, now) {
+    if (poop.dissolving) return;
+    clearPoopClaim(poop);
+    poop.dissolving = true;
+    poop.dissolveStartedAt = now;
+    poop.dissolveProgress = 0;
+    poop.dissolveScale = 1;
+  }
+
+  function updatePoopDissolving(now) {
+    for (let i = grandmaPoops.length - 1; i >= 0; i--) {
+      const poop = grandmaPoops[i];
+      if (!poop.dissolving) continue;
+      poop.dissolveProgress = Math.min(1, (now - poop.dissolveStartedAt) / poopDissolveDurationMs);
+      poop.dissolveScale = 1 - poop.dissolveProgress;
+      if (poop.dissolveProgress >= 1) {
+        grandmaPoops.splice(i, 1);
+      }
+    }
+  }
+
   function spawnFlyAtWormLocation(worm, now) {
     if (!flySprite || !flySprite.ready || !flyManifest) return false;
+    if (flies.length >= flyMaxCount) return false;
     const x = worm.x || window.innerWidth / 2;
     const y = (worm.baselineY || window.innerHeight - 50) - 30;
     flies.push({
@@ -2322,6 +2794,12 @@
       flyState: "flying",
       lastFrameAt: now,
       spawnedAt: now,
+      zapCooldownUntil: now + flyZapMinCooldownMs + Math.random() * (flyZapMaxCooldownMs - flyZapMinCooldownMs),
+      direction: { x: 1, y: 0 },
+      rotation: 0,
+      vx: 0,
+      vy: 0,
+      landedAt: 0,
       frameIndex: 0,
       frameTime: 0,
       growProgress: 0,
@@ -2353,6 +2831,16 @@
         const eased = 1 - Math.pow(1 - fly.growProgress, 3);
         fly.scale = flyStartScale + (flySpriteScale - flyStartScale) * eased;
       }
+      if (fly.state !== "falling" && fly.state !== "fallen" && now - fly.spawnedAt >= flyLifetimeMs) {
+        beginFlyFalling(fly, now);
+      }
+      if (fly.state === "falling") {
+        advanceFallingFly(fly, dt, now);
+        continue;
+      }
+      if (fly.state === "fallen") {
+        continue;
+      }
       if (fly.state === "flying") {
         const dx = fly.targetX - fly.x;
         const dy = fly.targetY - fly.y;
@@ -2365,6 +2853,7 @@
           const move = Math.min(speed, distance);
           fly.x += (dx / distance) * move;
           fly.y += (dy / distance) * move;
+          fly.direction = normalizeVector({ x: dx, y: dy });
         }
       } else if (fly.state === "landing") {
         if (now >= fly.waitUntil) {
@@ -2372,6 +2861,117 @@
           fly.targetX = flyPatrolMargin + Math.random() * Math.max(1, window.innerWidth - flyPatrolMargin * 2);
           fly.targetY = 50 + Math.random() * (window.innerHeight - 150);
         }
+      }
+      maybeFlyZap(fly, now);
+    }
+    pruneFlyZaps(now);
+    for (let i = flies.length - 1; i >= 0; i--) {
+      const fly = flies[i];
+      if (fly.state === "fallen" && now - fly.landedAt >= flyCorpseDeleteMs) {
+        flies.splice(i, 1);
+      }
+    }
+  }
+
+  function beginFlyFalling(fly, now) {
+    fly.state = "falling";
+    fly.flyState = "falling";
+    fly.vx = (Math.random() - 0.5) * 90;
+    fly.vy = -70 - Math.random() * 45;
+    fly.rotation = 0;
+    fly.landedAt = 0;
+  }
+
+  function advanceFallingFly(fly, dt, now) {
+    fly.vy += 980 * dt;
+    fly.x += fly.vx * dt;
+    fly.y += fly.vy * dt;
+    fly.rotation += (fly.vx >= 0 ? 1 : -1) * dt * 6;
+    const floorY = window.innerHeight - Math.max(10, (flyManifest.height * fly.scale) / 2);
+    if (fly.y >= floorY) {
+      fly.y = floorY;
+      fly.vx = 0;
+      fly.vy = 0;
+      fly.rotation = Math.PI / 2;
+      fly.state = "fallen";
+      fly.flyState = "fallen";
+      fly.landedAt = now;
+    }
+  }
+
+  function maybeFlyZap(fly, now) {
+    if (now < (fly.zapCooldownUntil || 0)) return;
+    const target = nearestGrandmaTarget({ x: fly.x, y: fly.y });
+    if (!target || target.distance > flyZapRange) {
+      fly.zapCooldownUntil = now + 250;
+      return;
+    }
+    const direction = normalizeVector({ x: target.head.x - fly.x, y: target.head.y - fly.y });
+    fly.direction = direction;
+    const color = flyZapColors[Math.floor(Math.random() * flyZapColors.length)];
+    const start = {
+      x: fly.x + direction.x * Math.max(10, flyManifest.width * fly.scale * 0.32),
+      y: fly.y + direction.y * Math.max(10, flyManifest.height * fly.scale * 0.2),
+    };
+    const end = {
+      x: target.head.x,
+      y: target.head.y,
+    };
+    flyZaps.push({ start, end, color, createdAt: now, duration: flyZapDurationMs });
+    damageGrandmaSnake(target.grandma, flyZapDamage, now);
+    playSound(sounds.flyZap);
+    fly.zapCooldownUntil = now + flyZapMinCooldownMs + Math.random() * (flyZapMaxCooldownMs - flyZapMinCooldownMs);
+  }
+
+  function nearestGrandmaTarget(point) {
+    let best = null;
+    const consider = (grandma, drawScale) => {
+      if (!grandma || grandma.dead || !grandma.heatSegments || grandma.heatSegments.length === 0) return;
+      const head = grandma.heatSegments[0];
+      const distance = pixelDistance(point, head);
+      if (!best || distance < best.distance) {
+        best = { grandma, head, distance, drawScale };
+      }
+    };
+    consider(snake, 1);
+    for (const baby of babyGrandmaSnakes) {
+      consider(baby, baby.drawScale || babyGrandmaDrawScale);
+    }
+    return best;
+  }
+
+  function damageGrandmaSnake(grandma, damage, now) {
+    if (!grandma || grandma.dead) return;
+    grandma.maxHp = grandma.maxHp || grandmaMaxHp;
+    grandma.hp = Math.max(0, (Number.isFinite(grandma.hp) ? grandma.hp : grandma.maxHp) - damage);
+    if (grandma.hp > 0) return;
+    killGrandmaSnake(grandma, now);
+  }
+
+  function killGrandmaSnake(grandma, now) {
+    if (grandma.dead) return;
+    grandma.enraged = true;
+    grandma.enrageStart = now;
+    grandma.enrageEndedAt = now;
+    grandma.dead = true;
+    grandma.heatSegments = [];
+    if (grandma === snake) {
+      snake.segments = [];
+      snake.previousSegments = [];
+      snake.enrageEatenCount = 0;
+      addCombatLogLine("grandma", "ENRAGED! Grandma deleted.", now, "shout");
+      return;
+    }
+    const index = babyGrandmaSnakes.indexOf(grandma);
+    if (index >= 0) babyGrandmaSnakes.splice(index, 1);
+    addCombatLogLine("grandma", "A Grandma snake enrages and disappears.", now, "shout");
+  }
+
+  function pruneFlyZaps(now) {
+    for (let i = flyZaps.length - 1; i >= 0; i--) {
+      const zap = flyZaps[i];
+      if (now - zap.createdAt >= zap.duration) {
+        flyZaps.splice(i, 1);
       }
     }
   }
@@ -2383,9 +2983,11 @@
     ctx.save();
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
+    drawFlyZaps(now);
     for (const fly of flies) {
       ctx.save();
       ctx.translate(fly.x, fly.y);
+      ctx.rotate(fly.rotation || 0);
       ctx.scale(fly.scale, fly.scale);
       ctx.drawImage(
         flySprite,
@@ -2401,6 +3003,51 @@
       ctx.restore();
     }
     ctx.restore();
+  }
+
+  function drawFlyZaps(now) {
+    for (const zap of flyZaps) {
+      const progress = clamp01((now - zap.createdAt) / zap.duration);
+      const alpha = 1 - progress;
+      const jitter = 2 + progress * 5;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.lineCap = "round";
+      ctx.shadowColor = zap.color.beam;
+      ctx.shadowBlur = 16;
+      ctx.strokeStyle = zap.color.beam;
+      ctx.lineWidth = 7;
+      drawJaggedZapLine(zap.start, zap.end, jitter);
+      ctx.strokeStyle = zap.color.core;
+      ctx.lineWidth = 2.5;
+      drawJaggedZapLine(zap.start, zap.end, jitter * 0.55);
+      ctx.fillStyle = zap.color.ball;
+      ctx.beginPath();
+      ctx.arc(zap.end.x, zap.end.y, 8 + (1 - alpha) * 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = zap.color.core;
+      ctx.beginPath();
+      ctx.arc(zap.end.x, zap.end.y, 3.5 + (1 - alpha) * 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function drawJaggedZapLine(start, end, jitter) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const normal = distance > 0.001 ? { x: -dy / distance, y: dx / distance } : { x: 0, y: 1 };
+    const segments = 4;
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    for (let i = 1; i < segments; i += 1) {
+      const t = i / segments;
+      const offset = (Math.random() - 0.5) * jitter;
+      ctx.lineTo(start.x + dx * t + normal.x * offset, start.y + dy * t + normal.y * offset);
+    }
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
   }
 
   function grandmaPoopScale(poop, now) {
@@ -2443,10 +3090,12 @@
   function drawSnake(now) {
     if (!config.snakeEnabled) return;
     if (!grandmaHeadSprite.complete || !grandmaHeadSprite.naturalWidth || !grandmaHeadSprite.naturalHeight) return;
+    if (snake.dead && babyGrandmaSnakes.length === 0) return;
     if (snake.mode === "heat") {
       drawHeatSeekingSnake(now);
       return;
     }
+    if (snake.dead) return;
     
       const width = gridWidth();
       const height = gridHeight();
@@ -2478,9 +3127,12 @@
 
   function drawHeatSeekingSnake(now) {
     for (const baby of babyGrandmaSnakes) {
-      drawHeatSnakeSegments(baby.heatSegments, now, babyGrandmaDrawScale);
+      if (baby.dead) continue;
+      drawHeatSnakeSegments(baby.heatSegments, now, baby.drawScale || babyGrandmaDrawScale);
     }
-    drawHeatSnakeSegments(snake.heatSegments, now, 1);
+    if (!snake.dead) {
+      drawHeatSnakeSegments(snake.heatSegments, now, 1);
+    }
   }
 
   function drawHeatSnakeSegments(segments, now, drawScale) {
@@ -3221,25 +3873,57 @@
 
   function draw(now) {
     ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-    maybeAddDurgularYell(now);
-    maybeAddTwitchChatQuip(now);
-    advanceSnake(now);
-    drawSnake(now);
-    drawGrandmaPoops(now);
-    drawPoopWorms(now);
-    drawFlies(now);
-    drawFakeCursor(now);
-    drawBidens(now);
-    drawEnrageMeter(now);
-    drawBidenTimer(now);
-    drawHudMessages(now);
+    maybeAddGmGithubQuip(now);
+    if (!config.logOnly) {
+      maybeAddDurgularYell(now);
+      maybeAddTwitchChatQuip(now);
+      advanceSnake(now);
+      drawSnake(now);
+      drawGrandmaPoops(now);
+      drawPoopWorms(now);
+      drawFlies(now);
+      drawFakeCursor(now);
+      drawBidens(now);
+      const anyGrandmaAlive = !snake.dead || babyGrandmaSnakes.some(b => !b.dead);
+      if (anyGrandmaAlive) {
+        drawEnrageMeter(now);
+      }
+      drawBidenTimer(now);
+      drawHudMessages(now);
+    }
     drawCombatLog(now);
-    requestAnimationFrame(draw);
+    animationFrameId = requestAnimationFrame(draw);
   }
 
-  resizeCanvas();
-  resetSnake();
-  window.addEventListener("resize", resizeCanvas);
+   function cleanup() {
+     if (animationFrameId !== null) {
+       cancelAnimationFrame(animationFrameId);
+       animationFrameId = null;
+     }
+     window.removeEventListener("resize", handleResize);
+     if (events) events.close();
+     
+     // Remove audio elements from DOM
+     for (const key in sounds) {
+       const pool = sounds[key];
+       if (pool && pool.clips) {
+         for (const audio of pool.clips) {
+           if (audio.parentNode) {
+             audio.parentNode.removeChild(audio);
+           }
+         }
+       }
+     }
+   }
+   
+   // Attach cleanup to page unload
+   window.addEventListener("beforeunload", cleanup);
+   window.addEventListener("pagehide", cleanup);
+   
+   resizeCanvas();
+   resetSnake();
+   const handleResize = () => resizeCanvas();
+   window.addEventListener("resize", handleResize);
   wormSprite = new AsepriteBoneSprite("", {
     manifestUrl: "/assets/generated/sprites/worm_with_bones.layers.json",
     imageLayerName: "worm",
@@ -3265,7 +3949,7 @@
       console.warn("Fly sprite manifest failed to load.", error);
     });
 
-  const events = new EventSource("/events");
+   events = new EventSource("/events");
   events.onmessage = (event) => {
     try {
       const payload = JSON.parse(event.data);
@@ -3281,11 +3965,15 @@
         updateBidenTimer(payload, performance.now());
         return;
       }
+      if (payload.type === "combat_log") {
+        addCombatLogLine(payload.speaker || "gm", payload.text || "", performance.now(), payload.channel || "say");
+        return;
+      }
       addSpawn(payload);
     } catch (_error) {
       // Ignore malformed overlay events.
     }
   };
 
-  requestAnimationFrame(draw);
+   animationFrameId = requestAnimationFrame(draw);
 })();

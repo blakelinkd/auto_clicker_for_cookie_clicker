@@ -3174,6 +3174,7 @@ def _get_dom_loop_services():
             record_shimmer_click_runtime=_record_shimmer_click_runtime,
             record_shimmer_collect_runtime=_record_shimmer_collect_runtime,
             overlay_event_sender=overlay_event_emitter.send_shimmer_spawn,
+            combat_log_sender=overlay_event_emitter.send_combat_log,
             get_pending_hand_shimmer=spell_autocaster.get_pending_hand_shimmer,
             clear_pending_hand_shimmer=spell_autocaster.clear_pending_hand_shimmer,
             recent_shimmer_clicks=recent_shimmer_clicks,

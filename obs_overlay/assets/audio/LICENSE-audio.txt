@@ -35,6 +35,15 @@ License: Creative Commons Attribution 4.0 International
 Source page states the sound is free for commercial use.
 Date accessed: 2026-04-16
 
+fly_zap.mp3
+Source: https://opengameart.org/content/laser-sound-effects
+File: https://opengameart.org/sites/default/files/sfx_laser_1.mp3
+Title: Laser Sound Effects - sfx_laser_1.mp3
+Author: EZduzziteh
+License: Creative Commons 0
+Source page lists the asset under CC0.
+Date accessed: 2026-04-18
+
 fly_buzz.mp3
 Source: https://freesound.org/people/cmilo1269/sounds/491963/
 Preview file: https://cdn.freesound.org/previews/491/491963_10630312-hq.mp3

@@ -16,11 +16,14 @@ description: Advanced automation bot for the Steam version of Cookie Clicker
 
 ## 🎥 **Watch the App in Action Live!**
 
-<div style="margin: 2.5rem 0 1.5rem; display: flex; align-items: center; justify-content: center; gap: 1rem;">
+<div style="margin: 2.5rem 0 1.5rem; display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap;">
   <a href="https://www.twitch.tv/biotachyonic">
     <img src="https://img.shields.io/badge/Twitch-9146FF?style=for-the-badge&logo=twitch&logoColor=white" alt="Twitch">
   </a>
-  <strong>Live on <a href="https://www.twitch.tv/biotachyonic">Twitch.tv/biotachyonic</a></strong> – See real-time automation, strategies, and development!
+  <a href="https://youtube.com/live/xdUKDoRiUn0?feature=share">
+    <img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube Live">
+  </a>
+  <strong>Live on <a href="https://www.twitch.tv/biotachyonic">Twitch</a> &amp; <a href="https://youtube.com/live/xdUKDoRiUn0?feature=share">YouTube</a></strong> – See real-time automation, strategies, and development!
 </div>
 
 </div>

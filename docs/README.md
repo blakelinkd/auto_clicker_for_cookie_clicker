@@ -13,8 +13,9 @@
 ## 🎥 **Watch the App in Action Live!**
 
 [![Twitch](https://img.shields.io/badge/Twitch-9146FF?style=for-the-badge&logo=twitch&logoColor=white)](https://www.twitch.tv/biotachyonic)
+[![YouTube](https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtube.com/live/xdUKDoRiUn0?feature=share)
 
-**Live on [Twitch.tv/biotachyonic](https://www.twitch.tv/biotachyonic)**  
+**Live on [Twitch.tv/biotachyonic](https://www.twitch.tv/biotachyonic)** and **[YouTube Live](https://youtube.com/live/xdUKDoRiUn0?feature=share)**  
 See real-time automation, strategies, and development.
 
 If the bot looks interesting, stop by and say **hi** in chat.
